@@ -32,9 +32,9 @@ Toolbooox 是一个 Chrome 浏览器插件，定位为本地优先的万能工�
 ### 数据与隐私
 
 - 插件不发起网络请求，密码数据不会上传到服务器。
-- 密码库主数据保存在浏览器本地 IndexedDB 中。
+- 密码库主数据保存在浏览器本地 IndexedDB 中，密码字段会使用 Web Crypto API 的 AES-GCM 加密后再落库。
 - 旧版本保存在 `chrome.storage.local` 的数据会在首次打开插件时自动迁移到 IndexedDB。
-- 当前密码字段仍是本地明文存储。IndexedDB 解决的是本地结构化存储问题，不等于加密。后续计划加入主密码和 AES-GCM 加密。
+- 当前加密密钥仍保存在本地浏览器存储中，后续计划加入主密码派生密钥，以进一步提升本地数据保护强度。
 
 ### 技术栈
 
@@ -84,9 +84,9 @@ This plugin repository is open sourced under the MIT License. Forks and contribu
 ### Data and Privacy
 
 - The extension does not make network requests. Password data is not uploaded to any server.
-- Password vault data is stored locally in browser IndexedDB.
+- Password vault data is stored locally in browser IndexedDB. Password fields are encrypted with AES-GCM through the Web Crypto API before being written.
 - Data previously stored in `chrome.storage.local` is migrated to IndexedDB automatically when the popup is opened.
-- Password fields are still stored locally in plain text. IndexedDB improves local structured storage, but it is not encryption. Master password and AES-GCM encryption are planned.
+- The encryption key is still stored locally in browser storage. Master-password-derived encryption is planned to further strengthen local data protection.
 
 ### Tech Stack
 

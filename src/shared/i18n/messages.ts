@@ -17,15 +17,18 @@ type Messages = {
   readonly deleted: string;
   readonly displayName: string;
   readonly displayNamePlaceholder: string;
+  readonly duplicateAccount: string;
   readonly edit: string;
   readonly editPassword: string;
   readonly export: string;
   readonly exported: string;
   readonly failedImport: string;
+  readonly failedSave: string;
   readonly hide: string;
   readonly import: string;
   readonly imported: string;
   readonly invalidImport: string;
+  readonly invalidUrl: string;
   readonly language: string;
   readonly localPasswordManager: string;
   readonly menu: string;
@@ -73,15 +76,18 @@ export const messages: Record<Locale, Messages> = {
     deleted: "密码已从本地删除。",
     displayName: "显示名称",
     displayNamePlaceholder: "方便区分这是账号名",
+    duplicateAccount: "当前网站已存在相同账号。",
     edit: "编辑",
     editPassword: "编辑密码",
     export: "导出",
     exported: "密码库已导出。",
     failedImport: "密码库导入失败。",
+    failedSave: "密码保存失败。",
     hide: "隐藏",
     import: "导入",
     imported: "密码库已导入本地。",
     invalidImport: "导入文件格式无效。",
+    invalidUrl: "请输入有效的网址。",
     language: "语言",
     localPasswordManager: "本地密码管理器",
     menu: "菜单",
@@ -127,15 +133,18 @@ export const messages: Record<Locale, Messages> = {
     deleted: "Password deleted locally.",
     displayName: "Display name",
     displayNamePlaceholder: "A name that helps you recognize this account",
+    duplicateAccount: "This account already exists for the current site.",
     edit: "Edit",
     editPassword: "Edit Password",
     export: "Export",
     exported: "Password vault exported.",
     failedImport: "Failed to import password vault.",
+    failedSave: "Failed to save password.",
     hide: "Hide",
     import: "Import",
     imported: "Password vault imported locally.",
     invalidImport: "Invalid import file.",
+    invalidUrl: "Enter a valid URL.",
     language: "Language",
     localPasswordManager: "Local Password Manager",
     menu: "Menu",

@@ -6,18 +6,42 @@ import type {
 import { getHostname, normalizeUrl } from "./urlMatcher";
 
 const LEGACY_STORAGE_KEY = "toolbooox.passwordVault.entries";
+const ENCRYPTION_KEY_STORAGE_KEY = "toolbooox.passwordVault.encryptionKey.v1";
 const DATABASE_NAME = "toolbooox.passwordVault";
 const DATABASE_VERSION = 1;
 const ENTRY_STORE_NAME = "passwordEntries";
 const METADATA_STORE_NAME = "metadata";
 const MIGRATION_METADATA_KEY = "legacyStorageMigrated";
 
-type StoredPasswordEntry = PasswordEntry & {
+type PasswordVaultErrorCode = "DUPLICATE_ENTRY" | "INVALID_URL";
+
+export class PasswordVaultError extends Error {
+  readonly code: PasswordVaultErrorCode;
+
+  constructor(code: PasswordVaultErrorCode) {
+    super(code);
+    this.name = "PasswordVaultError";
+    this.code = code;
+  }
+}
+
+type EncryptedStoredPasswordEntry = Omit<PasswordEntry, "password"> & {
+  readonly password: string;
   readonly schemaVersion: 1;
-  readonly passwordEncoding: "plain";
-  readonly encryptionVersion: null;
+  readonly passwordEncoding: "aes-gcm";
+  readonly encryptionVersion: 1;
+  readonly iv: string;
   readonly sortOrder: number;
 };
+
+type PlainStoredPasswordEntry = PasswordEntry & {
+  readonly schemaVersion?: 1;
+  readonly passwordEncoding?: "plain";
+  readonly encryptionVersion?: null;
+  readonly sortOrder?: number;
+};
+
+type StoredPasswordEntry = EncryptedStoredPasswordEntry | PlainStoredPasswordEntry;
 
 type MetadataRecord = {
   readonly key: string;
@@ -30,6 +54,103 @@ function hasChromeStorage(): boolean {
 
 function hasIndexedDb(): boolean {
   return typeof indexedDB !== "undefined";
+}
+
+function bytesToBase64(bytes: Uint8Array): string {
+  let binaryValue = "";
+
+  bytes.forEach((byte) => {
+    binaryValue += String.fromCharCode(byte);
+  });
+
+  return btoa(binaryValue);
+}
+
+function base64ToBytes(value: string): Uint8Array {
+  const binaryValue = atob(value);
+  const bytes = new Uint8Array(binaryValue.length);
+
+  for (let index = 0; index < binaryValue.length; index += 1) {
+    bytes[index] = binaryValue.charCodeAt(index);
+  }
+
+  return bytes;
+}
+
+function bytesToArrayBuffer(bytes: Uint8Array): ArrayBuffer {
+  const buffer = new ArrayBuffer(bytes.byteLength);
+  new Uint8Array(buffer).set(bytes);
+  return buffer;
+}
+
+async function readStoredEncryptionKey(): Promise<string | null> {
+  if (hasChromeStorage()) {
+    const result = await chrome.storage.local.get(ENCRYPTION_KEY_STORAGE_KEY);
+    return typeof result[ENCRYPTION_KEY_STORAGE_KEY] === "string"
+      ? result[ENCRYPTION_KEY_STORAGE_KEY]
+      : null;
+  }
+
+  return window.localStorage.getItem(ENCRYPTION_KEY_STORAGE_KEY);
+}
+
+async function writeStoredEncryptionKey(rawKey: string): Promise<void> {
+  if (hasChromeStorage()) {
+    await chrome.storage.local.set({ [ENCRYPTION_KEY_STORAGE_KEY]: rawKey });
+    return;
+  }
+
+  window.localStorage.setItem(ENCRYPTION_KEY_STORAGE_KEY, rawKey);
+}
+
+async function getEncryptionKey(): Promise<CryptoKey> {
+  if (!crypto.subtle) {
+    throw new Error("Web Crypto API is unavailable.");
+  }
+
+  const existingRawKey = await readStoredEncryptionKey();
+  const rawKey = existingRawKey ?? bytesToBase64(crypto.getRandomValues(new Uint8Array(32)));
+
+  if (!existingRawKey) {
+    await writeStoredEncryptionKey(rawKey);
+  }
+
+  return crypto.subtle.importKey(
+    "raw",
+    bytesToArrayBuffer(base64ToBytes(rawKey)),
+    { name: "AES-GCM" },
+    false,
+    ["encrypt", "decrypt"]
+  );
+}
+
+async function encryptPassword(password: string): Promise<{
+  readonly ciphertext: string;
+  readonly iv: string;
+}> {
+  const key = await getEncryptionKey();
+  const iv = crypto.getRandomValues(new Uint8Array(12));
+  const encryptedValue = await crypto.subtle.encrypt(
+    { name: "AES-GCM", iv },
+    key,
+    bytesToArrayBuffer(new TextEncoder().encode(password))
+  );
+
+  return {
+    ciphertext: bytesToBase64(new Uint8Array(encryptedValue)),
+    iv: bytesToBase64(iv)
+  };
+}
+
+async function decryptPassword(ciphertext: string, iv: string): Promise<string> {
+  const key = await getEncryptionKey();
+  const decryptedValue = await crypto.subtle.decrypt(
+    { name: "AES-GCM", iv: bytesToArrayBuffer(base64ToBytes(iv)) },
+    key,
+    bytesToArrayBuffer(base64ToBytes(ciphertext))
+  );
+
+  return new TextDecoder().decode(decryptedValue);
 }
 
 function requestToPromise<T>(request: IDBRequest<T>): Promise<T> {
@@ -128,24 +249,40 @@ async function setMetadata(database: IDBDatabase, key: string, value: unknown): 
   await transactionToPromise(transaction);
 }
 
-function toStoredEntry(entry: PasswordEntry, sortOrder: number): StoredPasswordEntry {
-  return {
-    ...entry,
-    schemaVersion: 1,
-    passwordEncoding: "plain",
-    encryptionVersion: null,
-    sortOrder
-  };
-}
+async function toStoredEntry(
+  entry: PasswordEntry,
+  sortOrder: number
+): Promise<EncryptedStoredPasswordEntry> {
+  const encryptedPassword = await encryptPassword(entry.password);
 
-function toPasswordEntry(entry: StoredPasswordEntry): PasswordEntry {
   return {
     id: entry.id,
     displayName: entry.displayName,
     url: entry.url,
     hostname: entry.hostname,
     username: entry.username,
-    password: entry.password,
+    password: encryptedPassword.ciphertext,
+    createdAt: entry.createdAt,
+    updatedAt: entry.updatedAt,
+    schemaVersion: 1,
+    passwordEncoding: "aes-gcm",
+    encryptionVersion: 1,
+    iv: encryptedPassword.iv,
+    sortOrder
+  };
+}
+
+async function toPasswordEntry(entry: StoredPasswordEntry): Promise<PasswordEntry> {
+  return {
+    id: entry.id,
+    displayName: entry.displayName,
+    url: entry.url,
+    hostname: entry.hostname,
+    username: entry.username,
+    password:
+      entry.passwordEncoding === "aes-gcm"
+        ? await decryptPassword(entry.password, entry.iv)
+        : entry.password,
     createdAt: entry.createdAt,
     updatedAt: entry.updatedAt
   };
@@ -156,23 +293,46 @@ async function readIndexedDbEntries(database: IDBDatabase): Promise<PasswordEntr
   const entries = await requestToPromise<StoredPasswordEntry[]>(
     transaction.objectStore(ENTRY_STORE_NAME).getAll()
   );
+  const sortedEntries = entries.sort(
+    (leftEntry, rightEntry) => (leftEntry.sortOrder ?? 0) - (rightEntry.sortOrder ?? 0)
+  );
 
-  return entries
-    .sort((leftEntry, rightEntry) => leftEntry.sortOrder - rightEntry.sortOrder)
-    .map(toPasswordEntry);
+  return Promise.all(sortedEntries.map(toPasswordEntry));
 }
 
 async function writeIndexedDbEntries(
   database: IDBDatabase,
   entries: readonly PasswordEntry[]
 ): Promise<void> {
+  const storedEntries = await Promise.all(
+    entries.map((entry, index) => toStoredEntry(entry, index))
+  );
   const transaction = database.transaction(ENTRY_STORE_NAME, "readwrite");
   const store = transaction.objectStore(ENTRY_STORE_NAME);
   store.clear();
-  entries.forEach((entry, index) => {
-    store.put(toStoredEntry(entry, index));
+  storedEntries.forEach((entry) => {
+    store.put(entry);
   });
   await transactionToPromise(transaction);
+}
+
+function mergeEntries(
+  currentEntries: readonly PasswordEntry[],
+  legacyEntries: readonly PasswordEntry[]
+): PasswordEntry[] {
+  const seenIds = new Set<string>();
+  const mergedEntries: PasswordEntry[] = [];
+
+  [...currentEntries, ...legacyEntries].forEach((entry) => {
+    if (seenIds.has(entry.id)) {
+      return;
+    }
+
+    seenIds.add(entry.id);
+    mergedEntries.push(entry);
+  });
+
+  return mergedEntries;
 }
 
 async function migrateLegacyStorage(database: IDBDatabase): Promise<void> {
@@ -185,8 +345,8 @@ async function migrateLegacyStorage(database: IDBDatabase): Promise<void> {
   const legacyEntries = await readLegacyEntries();
   const currentEntries = await readIndexedDbEntries(database);
 
-  if (legacyEntries.length > 0 && currentEntries.length === 0) {
-    await writeIndexedDbEntries(database, legacyEntries);
+  if (legacyEntries.length > 0) {
+    await writeIndexedDbEntries(database, mergeEntries(currentEntries, legacyEntries));
   }
 
   await clearLegacyEntries();
@@ -221,17 +381,39 @@ function createId(): string {
 function createEntry(draft: PasswordEntryDraft, existingEntry?: PasswordEntry): PasswordEntry {
   const now = new Date().toISOString();
   const normalizedUrl = normalizeUrl(draft.url);
+  const hostname = getHostname(normalizedUrl);
+
+  if (!hostname) {
+    throw new PasswordVaultError("INVALID_URL");
+  }
 
   return {
     id: existingEntry?.id ?? createId(),
     displayName: draft.displayName.trim(),
     url: normalizedUrl,
-    hostname: getHostname(normalizedUrl),
+    hostname,
     username: draft.username.trim(),
     password: draft.password,
     createdAt: existingEntry?.createdAt ?? now,
     updatedAt: now
   };
+}
+
+function assertNoDuplicateEntry(
+  entries: readonly PasswordEntry[],
+  nextEntry: PasswordEntry,
+  editingId?: string
+): void {
+  const hasDuplicate = entries.some(
+    (entry) =>
+      entry.id !== editingId &&
+      entry.hostname === nextEntry.hostname &&
+      entry.username.toLowerCase() === nextEntry.username.toLowerCase()
+  );
+
+  if (hasDuplicate) {
+    throw new PasswordVaultError("DUPLICATE_ENTRY");
+  }
 }
 
 export async function getPasswordEntries(): Promise<PasswordEntry[]> {
@@ -247,6 +429,7 @@ export async function savePasswordEntry(
     ? entries.find((entry) => entry.id === editingId)
     : undefined;
   const nextEntry = createEntry(draft, existingEntry);
+  assertNoDuplicateEntry(entries, nextEntry, editingId);
   const nextEntries = existingEntry
     ? entries.map((entry) => (entry.id === editingId ? nextEntry : entry))
     : [nextEntry, ...entries];
@@ -266,6 +449,9 @@ export async function replacePasswordEntries(
   entries: readonly PasswordEntryDraft[]
 ): Promise<PasswordEntry[]> {
   const sanitizedEntries = entries.map((entry) => createEntry(entry));
+  sanitizedEntries.forEach((entry, index) => {
+    assertNoDuplicateEntry(sanitizedEntries.slice(0, index), entry);
+  });
   await writeEntries(sanitizedEntries);
   return sanitizedEntries;
 }

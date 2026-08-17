@@ -8,6 +8,7 @@ import {
   createPasswordVaultExport,
   deletePasswordEntry,
   getPasswordEntries,
+  PasswordVaultError,
   replacePasswordEntries,
   savePasswordEntry
 } from "../shared/passwordVault/storage";
@@ -16,6 +17,7 @@ import type {
   PasswordEntryDraft,
   PasswordVaultExport
 } from "../shared/passwordVault/types";
+import { getPaginatedItems, getTotalPages } from "../shared/passwordVault/pagination";
 import { getHostname, isSameOrSubdomain } from "../shared/passwordVault/urlMatcher";
 import "./styles.css";
 
@@ -28,6 +30,7 @@ type FormState = {
 
 type ToolKey = "passwordManager";
 type SavedEntriesTab = "otherSites" | "all";
+type PendingAction = "save" | "import" | "export" | null;
 
 const emptyForm: FormState = {
   displayName: "",
@@ -60,6 +63,22 @@ async function copyTextToClipboard(text: string) {
   await navigator.clipboard.writeText(text);
 }
 
+function getVaultErrorMessage(error: unknown, t: (typeof messages)[Locale]): string {
+  if (!(error instanceof PasswordVaultError)) {
+    return "";
+  }
+
+  if (error.code === "DUPLICATE_ENTRY") {
+    return t.duplicateAccount;
+  }
+
+  if (error.code === "INVALID_URL") {
+    return t.invalidUrl;
+  }
+
+  return "";
+}
+
 function PopupApp() {
   const [locale, setLocale] = useState<Locale>(getDefaultLocale());
   const [activeTool, setActiveTool] = useState<ToolKey>("passwordManager");
@@ -72,8 +91,11 @@ function PopupApp() {
   const [savedEntriesPage, setSavedEntriesPage] = useState(1);
   const [visiblePasswords, setVisiblePasswords] = useState<ReadonlySet<string>>(new Set());
   const [message, setMessage] = useState("");
+  const [pendingAction, setPendingAction] = useState<PendingAction>(null);
+  const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null);
   const formRef = useRef<HTMLFormElement | null>(null);
   const t = messages[locale];
+  const isActionPending = pendingAction !== null || pendingDeleteId !== null;
 
   useEffect(() => {
     void getSavedLocale().then(setLocale);
@@ -124,14 +146,9 @@ function PopupApp() {
     [activeHostname, entries]
   );
   const displayedSavedEntries = savedEntriesTab === "otherSites" ? otherSiteEntries : entries;
-  const savedEntriesTotalPages = Math.max(
-    1,
-    Math.ceil(displayedSavedEntries.length / PASSWORD_PAGE_SIZE)
-  );
+  const savedEntriesTotalPages = getTotalPages(displayedSavedEntries.length, PASSWORD_PAGE_SIZE);
   const paginatedSavedEntries = useMemo(() => {
-    const startIndex = (savedEntriesPage - 1) * PASSWORD_PAGE_SIZE;
-
-    return displayedSavedEntries.slice(startIndex, startIndex + PASSWORD_PAGE_SIZE);
+    return getPaginatedItems(displayedSavedEntries, savedEntriesPage, PASSWORD_PAGE_SIZE);
   }, [displayedSavedEntries, savedEntriesPage]);
 
   useEffect(() => {
@@ -167,19 +184,31 @@ function PopupApp() {
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
 
+    if (pendingAction === "save") {
+      return;
+    }
+
     if (!formState.displayName.trim() || !formState.url.trim() || !formState.username.trim()) {
       setMessage(t.validationRequired);
       return;
     }
 
-    const isEditing = Boolean(editingId);
-    const nextEntries = await savePasswordEntry(toDraft(formState), editingId ?? undefined);
-    setEntries(nextEntries);
-    setMessage(isEditing ? t.updated : t.saved);
-    if (!isEditing) {
-      setSavedEntriesPage(1);
+    setPendingAction("save");
+
+    try {
+      const isEditing = Boolean(editingId);
+      const nextEntries = await savePasswordEntry(toDraft(formState), editingId ?? undefined);
+      setEntries(nextEntries);
+      setMessage(isEditing ? t.updated : t.saved);
+      if (!isEditing) {
+        setSavedEntriesPage(1);
+      }
+      resetForm();
+    } catch (error) {
+      setMessage(getVaultErrorMessage(error, t) || t.failedSave);
+    } finally {
+      setPendingAction(null);
     }
-    resetForm();
   };
 
   const handleEdit = (entry: PasswordEntry) => {
@@ -197,20 +226,35 @@ function PopupApp() {
   };
 
   const handleDelete = async (entry: PasswordEntry) => {
+    if (pendingDeleteId) {
+      return;
+    }
+
     if (!window.confirm(t.deleteConfirm(entry.displayName))) {
       return;
     }
 
-    const nextEntries = await deletePasswordEntry(entry.id);
-    setEntries(nextEntries);
-    setMessage(t.deleted);
+    setPendingDeleteId(entry.id);
 
-    if (editingId === entry.id) {
-      resetForm();
+    try {
+      const nextEntries = await deletePasswordEntry(entry.id);
+      setEntries(nextEntries);
+      setMessage(t.deleted);
+
+      if (editingId === entry.id) {
+        resetForm();
+      }
+    } finally {
+      setPendingDeleteId(null);
     }
   };
 
   const handleExport = () => {
+    if (pendingAction === "export") {
+      return;
+    }
+
+    setPendingAction("export");
     const payload = createPasswordVaultExport(entries);
     const blob = new Blob([JSON.stringify(payload, null, 2)], {
       type: "application/json"
@@ -222,15 +266,22 @@ function PopupApp() {
     anchor.click();
     URL.revokeObjectURL(downloadUrl);
     setMessage(t.exported);
+    setPendingAction(null);
   };
 
   const handleImport = async (event: ChangeEvent<HTMLInputElement>) => {
+    if (pendingAction === "import") {
+      return;
+    }
+
     const [file] = Array.from(event.target.files ?? []);
     event.target.value = "";
 
     if (!file) {
       return;
     }
+
+    setPendingAction("import");
 
     try {
       const parsedValue: unknown = JSON.parse(await file.text());
@@ -245,8 +296,10 @@ function PopupApp() {
       setSavedEntriesPage(1);
       setMessage(t.imported);
       resetForm();
-    } catch {
-      setMessage(t.failedImport);
+    } catch (error) {
+      setMessage(getVaultErrorMessage(error, t) || t.failedImport);
+    } finally {
+      setPendingAction(null);
     }
   };
 
@@ -331,15 +384,30 @@ function PopupApp() {
                 <h2>{t.passwordManager}</h2>
               </div>
               <div className="feature-actions">
-                <button className="primary-action" type="button" onClick={handleAdd}>
+                <button
+                  className="primary-action"
+                  disabled={isActionPending}
+                  type="button"
+                  onClick={handleAdd}
+                >
                   {t.add}
                 </button>
-                <button className="text-button" disabled={entries.length === 0} type="button" onClick={handleExport}>
+                <button
+                  className="text-button"
+                  disabled={entries.length === 0 || isActionPending}
+                  type="button"
+                  onClick={handleExport}
+                >
                   {t.export}
                 </button>
-                <label className="import-button">
+                <label className="import-button" aria-disabled={isActionPending ? "true" : undefined}>
                   {t.import}
-                  <input accept="application/json" type="file" onChange={handleImport} />
+                  <input
+                    accept="application/json"
+                    disabled={isActionPending}
+                    type="file"
+                    onChange={handleImport}
+                  />
                 </label>
               </div>
             </div>
@@ -361,7 +429,12 @@ function PopupApp() {
               <form ref={formRef} className="password-form" onSubmit={handleSubmit}>
                 <div className="section-heading">
                   <h3>{editingId ? t.editPassword : t.addPassword}</h3>
-                  <button className="text-button" type="button" onClick={resetForm}>
+                  <button
+                    className="text-button"
+                    disabled={pendingAction === "save"}
+                    type="button"
+                    onClick={resetForm}
+                  >
                     {t.cancel}
                   </button>
                 </div>
@@ -406,7 +479,7 @@ function PopupApp() {
                     onChange={handleInputChange("password")}
                   />
                 </label>
-                <button className="primary-button" type="submit">
+                <button className="primary-button" disabled={pendingAction === "save"} type="submit">
                   {editingId ? t.saveChanges : t.save}
                 </button>
               </form>
@@ -420,6 +493,8 @@ function PopupApp() {
                 <PasswordEntryTable
                   entries={matchedEntries}
                   isPasswordVisible={(id) => visiblePasswords.has(id)}
+                  isActionDisabled={isActionPending}
+                  pendingDeleteId={pendingDeleteId}
                   onCopy={handleCopy}
                   onDelete={handleDelete}
                   onEdit={handleEdit}
@@ -429,7 +504,12 @@ function PopupApp() {
               ) : (
                 <div className="empty-state">
                   <p>{t.noMatch}</p>
-                  <button className="text-button" type="button" onClick={handleAdd}>
+                  <button
+                    className="text-button"
+                    disabled={isActionPending}
+                    type="button"
+                    onClick={handleAdd}
+                  >
                     {t.saveAccount}
                   </button>
                 </div>
@@ -462,6 +542,8 @@ function PopupApp() {
                 <PasswordEntryTable
                   entries={paginatedSavedEntries}
                   isPasswordVisible={(id) => visiblePasswords.has(id)}
+                  isActionDisabled={isActionPending}
+                  pendingDeleteId={pendingDeleteId}
                   onCopy={handleCopy}
                   onDelete={handleDelete}
                   onEdit={handleEdit}
@@ -472,7 +554,12 @@ function PopupApp() {
               {displayedSavedEntries.length === 0 ? (
                 <div className="empty-state">
                   <p>{savedEntriesTab === "otherSites" ? t.noOtherSitePasswords : t.noPasswords}</p>
-                  <button className="text-button" type="button" onClick={handleAdd}>
+                  <button
+                    className="text-button"
+                    disabled={isActionPending}
+                    type="button"
+                    onClick={handleAdd}
+                  >
                     {t.addFirstAccount}
                   </button>
                 </div>
@@ -513,6 +600,8 @@ function PopupApp() {
 type PasswordEntryTableProps = {
   readonly entries: readonly PasswordEntry[];
   readonly isPasswordVisible: (id: string) => boolean;
+  readonly isActionDisabled: boolean;
+  readonly pendingDeleteId: string | null;
   readonly onCopy: (text: string, successMessage: string) => void;
   readonly onDelete: (entry: PasswordEntry) => void;
   readonly onEdit: (entry: PasswordEntry) => void;
@@ -523,6 +612,8 @@ type PasswordEntryTableProps = {
 function PasswordEntryTable({
   entries,
   isPasswordVisible,
+  isActionDisabled,
+  pendingDeleteId,
   onCopy,
   onDelete,
   onEdit,
@@ -541,7 +632,9 @@ function PasswordEntryTable({
         <PasswordEntryRow
           entry={entry}
           isPasswordVisible={isPasswordVisible(entry.id)}
+          isActionDisabled={isActionDisabled}
           key={entry.id}
+          pendingDeleteId={pendingDeleteId}
           onCopy={onCopy}
           onDelete={onDelete}
           onEdit={onEdit}
@@ -556,6 +649,8 @@ function PasswordEntryTable({
 type PasswordEntryRowProps = {
   readonly entry: PasswordEntry;
   readonly isPasswordVisible: boolean;
+  readonly isActionDisabled: boolean;
+  readonly pendingDeleteId: string | null;
   readonly onCopy: (text: string, successMessage: string) => void;
   readonly onDelete: (entry: PasswordEntry) => void;
   readonly onEdit: (entry: PasswordEntry) => void;
@@ -566,6 +661,8 @@ type PasswordEntryRowProps = {
 function PasswordEntryRow({
   entry,
   isPasswordVisible,
+  isActionDisabled,
+  pendingDeleteId,
   onCopy,
   onDelete,
   onEdit,
@@ -580,7 +677,11 @@ function PasswordEntryRow({
       </div>
       <div className="credential-cell">
         <span title={entry.username}>{entry.username}</span>
-        <button type="button" onClick={() => onCopy(entry.username, t.accountCopied)}>
+        <button
+          disabled={isActionDisabled}
+          type="button"
+          onClick={() => onCopy(entry.username, t.accountCopied)}
+        >
           {t.copy}
         </button>
       </div>
@@ -588,18 +689,26 @@ function PasswordEntryRow({
         <span title={isPasswordVisible ? entry.password : undefined}>
           {isPasswordVisible ? entry.password : "********"}
         </span>
-        <button type="button" onClick={() => onTogglePassword(entry.id)}>
+        <button disabled={isActionDisabled} type="button" onClick={() => onTogglePassword(entry.id)}>
           {isPasswordVisible ? t.hide : t.show}
         </button>
-        <button type="button" onClick={() => onCopy(entry.password, t.passwordCopied)}>
+        <button
+          disabled={isActionDisabled}
+          type="button"
+          onClick={() => onCopy(entry.password, t.passwordCopied)}
+        >
           {t.copy}
         </button>
       </div>
       <div className="row-actions">
-        <button type="button" onClick={() => onEdit(entry)}>
+        <button disabled={isActionDisabled} type="button" onClick={() => onEdit(entry)}>
           {t.edit}
         </button>
-        <button type="button" onClick={() => onDelete(entry)}>
+        <button
+          disabled={isActionDisabled || pendingDeleteId === entry.id}
+          type="button"
+          onClick={() => onDelete(entry)}
+        >
           {t.delete}
         </button>
       </div>
