@@ -1,6 +1,18 @@
 import { StrictMode, useEffect, useMemo, useRef, useState } from "react";
 import type { ChangeEvent, FormEvent } from "react";
 import { createRoot } from "react-dom/client";
+import {
+  clearCapturedCookieHeader,
+  doesRequestMatchCookieCaptureUrl,
+  formatCookieHeader,
+  getCapturedCookieHeader,
+  getCookiesForUrl,
+  getCookieCaptureRequestUrl,
+  parseCookieHeader,
+  saveCookieCaptureRequestUrl,
+  subscribeCapturedCookieHeaderChanges,
+  type CapturedCookieHeader
+} from "../shared/chrome/cookies";
 import { getActiveTabInfo, type ActiveTabInfo, updateActiveTabUrl } from "../shared/chrome/tabs";
 import {
   buildSwitchedDomainUrl,
@@ -37,9 +49,16 @@ type FormState = {
   readonly password: string;
 };
 
-type ToolKey = "passwordManager" | "developerTools";
+type ToolKey = "passwordManager" | "domainSwitcher" | "cookieViewer";
 type SavedEntriesTab = "otherSites" | "all";
-type PendingAction = "save" | "import" | "export" | "saveDomainRule" | "switchDomain" | null;
+type PendingAction =
+  | "save"
+  | "import"
+  | "export"
+  | "saveDomainRule"
+  | "switchDomain"
+  | "saveCookieRequestUrl"
+  | null;
 
 const emptyForm: FormState = {
   displayName: "",
@@ -62,17 +81,25 @@ function hasChromeStorage(): boolean {
 }
 
 function isToolKey(value: unknown): value is ToolKey {
-  return value === "passwordManager" || value === "developerTools";
+  return value === "passwordManager" || value === "domainSwitcher" || value === "cookieViewer";
+}
+
+function normalizeSavedToolKey(value: unknown): ToolKey {
+  if (value === "developerTools") {
+    return "domainSwitcher";
+  }
+
+  return isToolKey(value) ? value : "passwordManager";
 }
 
 async function getSavedActiveTool(): Promise<ToolKey> {
   if (hasChromeStorage()) {
     const result = await chrome.storage.local.get(ACTIVE_TOOL_STORAGE_KEY);
-    return isToolKey(result[ACTIVE_TOOL_STORAGE_KEY]) ? result[ACTIVE_TOOL_STORAGE_KEY] : "passwordManager";
+    return normalizeSavedToolKey(result[ACTIVE_TOOL_STORAGE_KEY]);
   }
 
   const activeTool = window.localStorage.getItem(ACTIVE_TOOL_STORAGE_KEY);
-  return isToolKey(activeTool) ? activeTool : "passwordManager";
+  return normalizeSavedToolKey(activeTool);
 }
 
 async function saveActiveTool(toolKey: ToolKey): Promise<void> {
@@ -167,6 +194,8 @@ function PopupApp() {
   const [domainSwitcherDraft, setDomainSwitcherDraft] =
     useState<DomainSwitcherDraft>(emptyDomainSwitcherDraft);
   const [domainSwitcherRules, setDomainSwitcherRules] = useState<DomainSwitcherRule[]>([]);
+  const [cookieRequestUrl, setCookieRequestUrl] = useState("");
+  const [capturedCookieHeader, setCapturedCookieHeader] = useState<CapturedCookieHeader | null>(null);
   const [selectedDomainRuleId, setSelectedDomainRuleId] = useState<string | null>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [isFormOpen, setIsFormOpen] = useState(false);
@@ -187,6 +216,7 @@ function PopupApp() {
     void getDomainSwitcherRules().then((rules) => {
       setDomainSwitcherRules(rules);
     });
+    void getCapturedCookieHeader().then(setCapturedCookieHeader);
     void getActiveTabInfo().then((tabInfo) => {
       setActiveTab(tabInfo);
 
@@ -218,6 +248,48 @@ function PopupApp() {
   }, [message]);
 
   const activeHostname = activeTab?.url ? getHostname(activeTab.url) : "";
+
+  useEffect(() => {
+    if (activeTool !== "cookieViewer") {
+      return;
+    }
+
+    if (!activeHostname) {
+      setCookieRequestUrl("");
+      setCapturedCookieHeader(null);
+      return;
+    }
+
+    void getCookieCaptureRequestUrl(activeHostname).then((nextRequestUrl) => {
+      setCookieRequestUrl(nextRequestUrl);
+      void syncCapturedCookieHeader(nextRequestUrl, false, true);
+    });
+  }, [activeHostname, activeTool]);
+
+  useEffect(() => {
+    if (activeTool !== "cookieViewer" || !activeHostname || !cookieRequestUrl) {
+      return;
+    }
+
+    return subscribeCapturedCookieHeaderChanges(() => {
+      void syncCapturedCookieHeader(cookieRequestUrl, false, false);
+    });
+  }, [activeHostname, activeTool, cookieRequestUrl]);
+
+  useEffect(() => {
+    if (activeTool !== "cookieViewer" || !activeHostname || !cookieRequestUrl) {
+      return;
+    }
+
+    const timerId = window.setInterval(() => {
+      void syncCapturedCookieHeader(cookieRequestUrl, false, false);
+    }, 500);
+
+    return () => {
+      window.clearInterval(timerId);
+    };
+  }, [activeHostname, activeTool, cookieRequestUrl]);
+
   const matchedEntries = useMemo(
     () =>
       activeHostname
@@ -289,6 +361,10 @@ function PopupApp() {
         [field]: event.target.value
       }));
     };
+
+  const handleCookieRequestUrlChange = (event: ChangeEvent<HTMLInputElement>) => {
+    setCookieRequestUrl(event.target.value);
+  };
 
   const resetForm = () => {
     setEditingId(null);
@@ -465,6 +541,89 @@ function PopupApp() {
     }
   };
 
+  const handleClearCookieViewer = async () => {
+    setCapturedCookieHeader(null);
+    await clearCapturedCookieHeader();
+    setMessage(t.cookiesCleared);
+  };
+
+  async function syncCapturedCookieHeader(
+    requestUrl: string,
+    shouldShowMessage: boolean,
+    allowFallback: boolean
+  ) {
+    const nextCapturedHeader = await getCapturedCookieHeader();
+    const matchedCapturedHeader =
+      nextCapturedHeader &&
+      nextCapturedHeader.pageHostname === activeHostname &&
+      doesRequestMatchCookieCaptureUrl(nextCapturedHeader.matchedUrl, requestUrl)
+        ? nextCapturedHeader
+        : null;
+
+    if (matchedCapturedHeader?.cookieHeader) {
+      setCapturedCookieHeader(matchedCapturedHeader);
+      if (shouldShowMessage) {
+        setMessage(t.requestCookieCaptured);
+      }
+      return;
+    }
+
+    if (!allowFallback) {
+      return;
+    }
+
+    try {
+      const cookiesForRequestUrl = requestUrl ? await getCookiesForUrl(requestUrl) : [];
+      const cookieHeader = formatCookieHeader(cookiesForRequestUrl);
+      const fallbackCapturedHeader = cookieHeader
+        ? {
+            pageHostname: activeHostname,
+            requestUrl,
+            matchedUrl: requestUrl,
+            method: "GET",
+            cookieHeader,
+            capturedAt: new Date().toISOString()
+          }
+        : null;
+
+      setCapturedCookieHeader(fallbackCapturedHeader);
+      if (shouldShowMessage) {
+        setMessage(fallbackCapturedHeader ? t.requestCookieCaptured : t.requestCookieEmpty);
+      }
+    } catch {
+      setCapturedCookieHeader(null);
+      if (shouldShowMessage) {
+        setMessage(t.requestCookieEmpty);
+      }
+    }
+  }
+
+  const handleRefreshCapturedCookieHeader = async () => {
+    await syncCapturedCookieHeader(cookieRequestUrl, true, true);
+  };
+
+  const handleSaveCookieRequestUrl = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+
+    if (pendingAction === "saveCookieRequestUrl") {
+      return;
+    }
+
+    setPendingAction("saveCookieRequestUrl");
+
+    try {
+      const savedRequestUrl = await saveCookieCaptureRequestUrl(cookieRequestUrl, activeHostname);
+      setCookieRequestUrl(savedRequestUrl);
+      setCapturedCookieHeader(null);
+      await clearCapturedCookieHeader();
+      setMessage(t.requestUrlSaved);
+    } catch {
+      setMessage(t.invalidRequestUrl);
+    } finally {
+      setPendingAction(null);
+    }
+  };
+
   const handleSavedEntriesTabChange = (nextTab: SavedEntriesTab) => {
     setSavedEntriesTab(nextTab);
     setSavedEntriesPage(1);
@@ -627,6 +786,13 @@ function PopupApp() {
   const currentDomainSwitchResult = activeTab?.url
     ? buildSwitchedDomainUrl(activeTab.url, domainSwitcherDraft)
     : null;
+  const visibleCapturedCookieHeader =
+    capturedCookieHeader &&
+    capturedCookieHeader.pageHostname === activeHostname &&
+    doesRequestMatchCookieCaptureUrl(capturedCookieHeader.matchedUrl, cookieRequestUrl)
+      ? capturedCookieHeader
+      : null;
+  const requestCookies = parseCookieHeader(visibleCapturedCookieHeader?.cookieHeader ?? "");
   const switchDomainButtonLabel =
     currentDomainSwitchResult?.source === "online"
       ? t.switchToLocalDomain
@@ -670,12 +836,20 @@ function PopupApp() {
             {t.passwordManager}
           </button>
           <button
-            aria-current={activeTool === "developerTools" ? "page" : undefined}
+            aria-current={activeTool === "domainSwitcher" ? "page" : undefined}
             className="menu-item"
             type="button"
-            onClick={() => handleToolChange("developerTools")}
+            onClick={() => handleToolChange("domainSwitcher")}
           >
-            {t.developerTools}
+            {t.domainSwitcher}
+          </button>
+          <button
+            aria-current={activeTool === "cookieViewer" ? "page" : undefined}
+            className="menu-item"
+            type="button"
+            onClick={() => handleToolChange("cookieViewer")}
+          >
+            {t.cookieViewer}
           </button>
         </aside>
 
@@ -901,12 +1075,12 @@ function PopupApp() {
               ) : null}
             </section>
           </section>
-          ) : (
-          <section className="feature-panel" aria-label={t.developerTools}>
+          ) : activeTool === "domainSwitcher" ? (
+          <section className="feature-panel" aria-label={t.domainSwitcher}>
             <div className="feature-header">
               <div>
                 <p className="eyebrow">{t.frontendDeveloperTools}</p>
-                <h2>{t.developerTools}</h2>
+                <h2>{t.domainSwitcher}</h2>
               </div>
             </div>
 
@@ -1009,6 +1183,144 @@ function PopupApp() {
               ) : (
                 <div className="empty-state">
                   <p>{t.noDomainRules}</p>
+                </div>
+              )}
+            </section>
+          </section>
+          ) : (
+          <section className="feature-panel" aria-label={t.cookieViewer}>
+            <div className="feature-header">
+              <div>
+                <p className="eyebrow">{t.frontendDeveloperTools}</p>
+                <h2>{t.cookieViewer}</h2>
+              </div>
+              <div className="feature-actions">
+                <button
+                  className="primary-action"
+                  disabled={!visibleCapturedCookieHeader?.cookieHeader}
+                  type="button"
+                  onClick={() => handleCopy(visibleCapturedCookieHeader?.cookieHeader ?? "", t.cookiesCopied)}
+                >
+                  {t.copyAll}
+                </button>
+              </div>
+            </div>
+
+            <section className="current-site" aria-label={t.currentSite}>
+              <div>
+                <p className="section-label">{t.currentSite}</p>
+                <h3>
+                  {activeTab?.url
+                    ? `${activeTab.title || activeHostname}（${activeHostname}）`
+                    : t.noActiveSite}
+                </h3>
+                {activeTab?.url ? <p>{activeTab.url}</p> : <p>{t.noActiveSiteHelp}</p>}
+              </div>
+            </section>
+
+            <section className="developer-form" aria-label={t.cookieViewer}>
+              <div className="section-heading">
+                <h3>{t.requestCookieHeader}</h3>
+              </div>
+              <p className="tool-note">{t.requestCookieHeaderHelp}</p>
+              <form className="cookie-request-form" onSubmit={handleSaveCookieRequestUrl}>
+                <label>
+                  {t.requestUrl}
+                  <input
+                    autoComplete="off"
+                    inputMode="url"
+                    placeholder={t.requestUrlPlaceholder}
+                    required
+                    value={cookieRequestUrl}
+                    onChange={handleCookieRequestUrlChange}
+                  />
+                </label>
+                <div className="developer-form-actions">
+                  <button
+                    className="primary-button"
+                    disabled={pendingAction === "saveCookieRequestUrl"}
+                    type="submit"
+                  >
+                    {t.saveRequestUrl}
+                  </button>
+                  <button
+                    className="text-button"
+                    type="button"
+                    onClick={handleRefreshCapturedCookieHeader}
+                  >
+                    {t.refresh}
+                  </button>
+                  <button
+                    className="text-button"
+                    disabled={!visibleCapturedCookieHeader?.cookieHeader}
+                    type="button"
+                    onClick={() => handleCopy(visibleCapturedCookieHeader?.cookieHeader ?? "", t.cookiesCopied)}
+                  >
+                    {t.copy}
+                  </button>
+                </div>
+              </form>
+              <textarea
+                className="cookie-header-output"
+                readOnly
+                placeholder={t.requestCookieEmpty}
+                value={visibleCapturedCookieHeader?.cookieHeader ?? ""}
+              />
+              {visibleCapturedCookieHeader ? (
+                <p className="tool-note">
+                  {t.lastCapturedRequest(
+                    visibleCapturedCookieHeader.method,
+                    visibleCapturedCookieHeader.matchedUrl
+                  )}
+                </p>
+              ) : null}
+              <p className="tool-note">{t.cookieViewerPrivacy}</p>
+            </section>
+
+            <section className="entry-list" aria-label={t.cookieViewer}>
+              <div className="section-heading">
+                <h3>{t.cookieList}</h3>
+                <div className="section-actions">
+                  <span className="counter">{requestCookies.length}</span>
+                  <button
+                    className="text-button"
+                    disabled={!visibleCapturedCookieHeader}
+                    type="button"
+                    onClick={handleClearCookieViewer}
+                  >
+                    {t.clear}
+                  </button>
+                </div>
+              </div>
+              {requestCookies.length > 0 ? (
+                <div className="cookie-table" role="list">
+                  <div className="cookie-table-header" aria-hidden="true">
+                    <span>{t.cookieName}</span>
+                    <span>{t.cookieValue}</span>
+                    <span>{t.actions}</span>
+                  </div>
+                  {requestCookies.map((cookie) => (
+                    <article
+                      className="cookie-row"
+                      key={cookie.name}
+                      role="listitem"
+                    >
+                      <span className="cookie-cell" title={cookie.name}>{cookie.name}</span>
+                      <span className="cookie-cell" title={cookie.value}>{cookie.value}</span>
+                      <div className="row-actions">
+                        <button
+                          type="button"
+                          onClick={() => handleCopy(`${cookie.name}=${cookie.value}`, t.cookieCopied)}
+                        >
+                          {t.copy}
+                        </button>
+                      </div>
+                    </article>
+                  ))}
+                </div>
+              ) : (
+                <div className="empty-state">
+                  <p>{t.noCookies}</p>
                 </div>
               )}
             </section>

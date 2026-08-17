@@ -80,7 +80,7 @@ describe("passwordVault storage", () => {
   it("stores encrypted passwords in IndexedDB and returns decrypted entries", async () => {
     await savePasswordEntry({
       displayName: "Work",
-      url: "https://example.com/login",
+      url: "https://example.test/login",
       username: "alice",
       password: "secret-password"
     });
@@ -112,7 +112,7 @@ describe("passwordVault storage", () => {
   it("rejects duplicate hostname and username combinations", async () => {
     await savePasswordEntry({
       displayName: "First",
-      url: "https://example.com/login",
+      url: "https://example.test/login",
       username: "Alice",
       password: "secret-1"
     });
@@ -120,7 +120,7 @@ describe("passwordVault storage", () => {
     await expect(
       savePasswordEntry({
         displayName: "Second",
-        url: "example.com/dashboard",
+        url: "example.test/dashboard",
         username: "alice",
         password: "secret-2"
       })
@@ -130,7 +130,7 @@ describe("passwordVault storage", () => {
   it("rejects invalid import payload entries without replacing existing data", async () => {
     await savePasswordEntry({
       displayName: "Existing",
-      url: "https://example.com",
+      url: "https://example.test",
       username: "alice",
       password: "secret"
     });
@@ -153,8 +153,8 @@ describe("passwordVault storage", () => {
     const legacyEntry: PasswordEntry = {
       id: "legacy-id",
       displayName: "Legacy",
-      url: "https://legacy.example.com",
-      hostname: "legacy.example.com",
+      url: "https://legacy.example.test",
+      hostname: "legacy.example.test",
       username: "legacy-user",
       password: "legacy-secret",
       createdAt: "2026-01-01T00:00:00.000Z",
@@ -163,7 +163,7 @@ describe("passwordVault storage", () => {
 
     await savePasswordEntry({
       displayName: "Current",
-      url: "https://current.example.com",
+      url: "https://current.example.test",
       username: "current-user",
       password: "current-secret"
     });

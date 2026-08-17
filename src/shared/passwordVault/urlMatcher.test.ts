@@ -4,9 +4,9 @@ import { getHostname, normalizeUrl, isSameOrSubdomain } from "./urlMatcher";
 
 describe("urlMatcher", () => {
   it("normalizes URLs and extracts comparable hostnames", () => {
-    expect(normalizeUrl("example.com/path")).toBe("https://example.com/path");
-    expect(normalizeUrl("https://www.example.com/path")).toBe("https://www.example.com/path");
-    expect(getHostname("https://www.example.com/path")).toBe("example.com");
+    expect(normalizeUrl("example.test/path")).toBe("https://example.test/path");
+    expect(normalizeUrl("https://www.example.test/path")).toBe("https://www.example.test/path");
+    expect(getHostname("https://www.example.test/path")).toBe("example.test");
   });
 
   it("returns an empty hostname for invalid URLs", () => {
@@ -14,9 +14,9 @@ describe("urlMatcher", () => {
   });
 
   it("matches exact hosts and subdomains only", () => {
-    expect(isSameOrSubdomain("app.example.com", "example.com")).toBe(true);
-    expect(isSameOrSubdomain("example.com", "example.com")).toBe(true);
-    expect(isSameOrSubdomain("badexample.com", "example.com")).toBe(false);
+    expect(isSameOrSubdomain("app.example.test", "example.test")).toBe(true);
+    expect(isSameOrSubdomain("example.test", "example.test")).toBe(true);
+    expect(isSameOrSubdomain("badexample.test", "example.test")).toBe(false);
   });
 });
 

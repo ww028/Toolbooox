@@ -8,5 +8,10 @@
     "default_title": "Toolbooox",
     "default_popup": "popup.html"
   },
-  "permissions": ["storage", "activeTab"]
+  "background": {
+    "service_worker": "background.js",
+    "type": "module"
+  },
+  "permissions": ["storage", "activeTab", "cookies", "webRequest"],
+  "host_permissions": ["<all_urls>"]
 }

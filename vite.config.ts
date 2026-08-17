@@ -8,7 +8,12 @@ export default defineConfig({
     emptyOutDir: true,
     rollupOptions: {
       input: {
+        background: "src/background/main.ts",
         popup: "popup.html"
+      },
+      output: {
+        entryFileNames: (chunkInfo) =>
+          chunkInfo.name === "background" ? "background.js" : "assets/[name]-[hash].js"
       }
     }
   }

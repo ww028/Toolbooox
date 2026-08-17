@@ -319,6 +319,7 @@ h3 {
 }
 
 .developer-form label,
+.cookie-request-form label,
 .password-form label {
   display: grid;
   gap: 6px;
@@ -328,6 +329,7 @@ h3 {
 }
 
 .developer-form input,
+.cookie-request-form input,
 .password-form input {
   width: 100%;
   border: 1px solid var(--border);
@@ -341,7 +343,32 @@ h3 {
 }
 
 .developer-form input:focus,
+.cookie-request-form input:focus,
 .password-form input:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px rgba(15, 111, 159, 0.14);
+}
+
+.cookie-request-form {
+  display: grid;
+  gap: 10px;
+}
+
+.cookie-header-output {
+  width: 100%;
+  min-height: 74px;
+  resize: vertical;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: rgba(249, 252, 255, 0.74);
+  color: #121b2a;
+  padding: 9px 10px;
+  font-size: 12px;
+  line-height: 1.45;
+  outline: none;
+}
+
+.cookie-header-output:focus {
   border-color: var(--accent);
   box-shadow: 0 0 0 3px rgba(15, 111, 159, 0.14);
 }
@@ -362,6 +389,12 @@ h3 {
 .developer-form-actions .text-button {
   width: auto;
   min-width: 104px;
+}
+
+.section-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
 }
 
 .domain-rule-list {
@@ -411,11 +444,68 @@ h3 {
   white-space: nowrap;
 }
 
+.cookie-table {
+  display: grid;
+  border: 1px solid rgba(248, 251, 254, 0.82);
+  border-radius: 8px;
+  background: var(--glass);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.92),
+    var(--shadow-tight);
+  overflow: hidden;
+}
+
+.cookie-table-header,
+.cookie-row {
+  display: grid;
+  grid-template-columns:
+    minmax(160px, 1fr)
+    minmax(260px, 2fr)
+    minmax(64px, auto);
+  align-items: center;
+  gap: 10px;
+}
+
+.cookie-table-header {
+  border-bottom: 1px solid rgba(202, 215, 229, 0.58);
+  background: rgba(238, 244, 250, 0.48);
+  color: #64778d;
+  padding: 9px 12px;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.cookie-row {
+  padding: 10px 12px;
+}
+
+.cookie-row + .cookie-row {
+  border-top: 1px solid rgba(202, 215, 229, 0.42);
+}
+
+.cookie-cell {
+  min-width: 0;
+  overflow: hidden;
+  color: #202b3a;
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1.35;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .selected-label {
   color: var(--accent);
   font-size: 12px;
   font-weight: 700;
   line-height: 1;
+}
+
+.tool-note {
+  overflow-wrap: anywhere;
+  color: #64778d;
+  font-size: 13px;
+  line-height: 1.5;
 }
 
 .password-table {
@@ -587,13 +677,13 @@ h3 {
 }
 
 .toast {
-  position: absolute;
-  top: 12px;
-  left: 50%;
-  z-index: 20;
+  position: fixed;
+  top: 88px;
+  left: calc(128px + (100vw - 128px) / 2);
+  z-index: 1000;
   transform: translateX(-50%);
   width: max-content;
-  max-width: calc(100% - 32px);
+  max-width: calc(100vw - 160px);
   border: 1px solid rgba(255, 255, 255, 0.14);
   border-radius: 8px;
   background: rgba(18, 27, 42, 0.86);
@@ -605,5 +695,6 @@ h3 {
   font-size: 13px;
   font-weight: 700;
   text-align: center;
-  white-space: nowrap;
+  white-space: normal;
+  pointer-events: none;
 }
