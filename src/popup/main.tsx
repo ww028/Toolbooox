@@ -1,7 +1,16 @@
 import { StrictMode, useEffect, useMemo, useRef, useState } from "react";
 import type { ChangeEvent, FormEvent } from "react";
 import { createRoot } from "react-dom/client";
-import { getActiveTabInfo, type ActiveTabInfo } from "../shared/chrome/tabs";
+import { getActiveTabInfo, type ActiveTabInfo, updateActiveTabUrl } from "../shared/chrome/tabs";
+import {
+  buildSwitchedDomainUrl,
+  deleteDomainSwitcherRule,
+  getDomainSwitcherRules,
+  isValidDomainSwitcherDraft,
+  saveDomainSwitcherRule,
+  type DomainSwitcherDraft,
+  type DomainSwitcherRule
+} from "../shared/devTools/domainSwitcher";
 import { getDefaultLocale, getSavedLocale, saveLocale, type Locale } from "../shared/i18n/locale";
 import { messages } from "../shared/i18n/messages";
 import {
@@ -28,9 +37,9 @@ type FormState = {
   readonly password: string;
 };
 
-type ToolKey = "passwordManager";
+type ToolKey = "passwordManager" | "developerTools";
 type SavedEntriesTab = "otherSites" | "all";
-type PendingAction = "save" | "import" | "export" | null;
+type PendingAction = "save" | "import" | "export" | "saveDomainRule" | "switchDomain" | null;
 
 const emptyForm: FormState = {
   displayName: "",
@@ -39,7 +48,41 @@ const emptyForm: FormState = {
   password: ""
 };
 
+const emptyDomainSwitcherDraft: DomainSwitcherDraft = {
+  onlineDomain: "",
+  localDomain: ""
+};
+
 const PASSWORD_PAGE_SIZE = 10;
+const ACTIVE_TOOL_STORAGE_KEY = "toolbooox.activeTool";
+const DEFAULT_LOCAL_DOMAIN = "localhost:";
+
+function hasChromeStorage(): boolean {
+  return typeof chrome !== "undefined" && Boolean(chrome.storage?.local);
+}
+
+function isToolKey(value: unknown): value is ToolKey {
+  return value === "passwordManager" || value === "developerTools";
+}
+
+async function getSavedActiveTool(): Promise<ToolKey> {
+  if (hasChromeStorage()) {
+    const result = await chrome.storage.local.get(ACTIVE_TOOL_STORAGE_KEY);
+    return isToolKey(result[ACTIVE_TOOL_STORAGE_KEY]) ? result[ACTIVE_TOOL_STORAGE_KEY] : "passwordManager";
+  }
+
+  const activeTool = window.localStorage.getItem(ACTIVE_TOOL_STORAGE_KEY);
+  return isToolKey(activeTool) ? activeTool : "passwordManager";
+}
+
+async function saveActiveTool(toolKey: ToolKey): Promise<void> {
+  if (hasChromeStorage()) {
+    await chrome.storage.local.set({ [ACTIVE_TOOL_STORAGE_KEY]: toolKey });
+    return;
+  }
+
+  window.localStorage.setItem(ACTIVE_TOOL_STORAGE_KEY, toolKey);
+}
 
 function toDraft(formState: FormState): PasswordEntryDraft {
   return {
@@ -61,6 +104,42 @@ function isImportPayload(value: unknown): value is PasswordVaultExport {
 
 async function copyTextToClipboard(text: string) {
   await navigator.clipboard.writeText(text);
+}
+
+function isSameDomainSwitcherDraft(
+  leftDraft: DomainSwitcherDraft,
+  rightDraft: DomainSwitcherDraft
+): boolean {
+  return (
+    leftDraft.onlineDomain.trim() === rightDraft.onlineDomain.trim() &&
+    leftDraft.localDomain.trim() === rightDraft.localDomain.trim()
+  );
+}
+
+function getActiveTabHost(tabInfo: ActiveTabInfo | null): string {
+  if (!tabInfo?.url) {
+    return "";
+  }
+
+  try {
+    return new URL(tabInfo.url).host;
+  } catch {
+    return "";
+  }
+}
+
+function createDefaultDomainSwitcherDraft(tabInfo: ActiveTabInfo | null): DomainSwitcherDraft {
+  return {
+    onlineDomain: getActiveTabHost(tabInfo),
+    localDomain: DEFAULT_LOCAL_DOMAIN
+  };
+}
+
+function toDomainSwitcherDraft(rule: DomainSwitcherRule): DomainSwitcherDraft {
+  return {
+    onlineDomain: rule.onlineDomain,
+    localDomain: rule.localDomain
+  };
 }
 
 function getVaultErrorMessage(error: unknown, t: (typeof messages)[Locale]): string {
@@ -85,6 +164,10 @@ function PopupApp() {
   const [entries, setEntries] = useState<PasswordEntry[]>([]);
   const [activeTab, setActiveTab] = useState<ActiveTabInfo | null>(null);
   const [formState, setFormState] = useState<FormState>(emptyForm);
+  const [domainSwitcherDraft, setDomainSwitcherDraft] =
+    useState<DomainSwitcherDraft>(emptyDomainSwitcherDraft);
+  const [domainSwitcherRules, setDomainSwitcherRules] = useState<DomainSwitcherRule[]>([]);
+  const [selectedDomainRuleId, setSelectedDomainRuleId] = useState<string | null>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [isFormOpen, setIsFormOpen] = useState(false);
   const [savedEntriesTab, setSavedEntriesTab] = useState<SavedEntriesTab>("otherSites");
@@ -99,7 +182,11 @@ function PopupApp() {
 
   useEffect(() => {
     void getSavedLocale().then(setLocale);
+    void getSavedActiveTool().then(setActiveTool);
     void getPasswordEntries().then(setEntries);
+    void getDomainSwitcherRules().then((rules) => {
+      setDomainSwitcherRules(rules);
+    });
     void getActiveTabInfo().then((tabInfo) => {
       setActiveTab(tabInfo);
 
@@ -155,10 +242,50 @@ function PopupApp() {
     setSavedEntriesPage((currentPage) => Math.min(currentPage, savedEntriesTotalPages));
   }, [savedEntriesTotalPages]);
 
+  useEffect(() => {
+    if (!activeTab?.url) {
+      return;
+    }
+
+    const selectedRule = selectedDomainRuleId
+      ? domainSwitcherRules.find((rule) => rule.id === selectedDomainRuleId)
+      : null;
+
+    if (selectedRule) {
+      return;
+    }
+
+    const matchedRule = domainSwitcherRules.find((rule) =>
+      buildSwitchedDomainUrl(activeTab.url, rule)
+    );
+
+    if (matchedRule) {
+      setSelectedDomainRuleId(matchedRule.id);
+      setDomainSwitcherDraft(toDomainSwitcherDraft(matchedRule));
+      return;
+    }
+
+    setDomainSwitcherDraft((currentDraft) => {
+      if (currentDraft.onlineDomain.trim() || currentDraft.localDomain.trim()) {
+        return currentDraft;
+      }
+
+      return createDefaultDomainSwitcherDraft(activeTab);
+    });
+  }, [activeTab, domainSwitcherRules, selectedDomainRuleId]);
+
   const handleInputChange =
     (field: keyof FormState) => (event: ChangeEvent<HTMLInputElement>) => {
       setFormState((currentFormState) => ({
         ...currentFormState,
+        [field]: event.target.value
+      }));
+    };
+
+  const handleDomainSwitcherInputChange =
+    (field: keyof DomainSwitcherDraft) => (event: ChangeEvent<HTMLInputElement>) => {
+      setDomainSwitcherDraft((currentConfig) => ({
+        ...currentConfig,
         [field]: event.target.value
       }));
     };
@@ -309,6 +436,12 @@ function PopupApp() {
     await saveLocale(nextLocale);
   };
 
+  const handleToolChange = async (nextTool: ToolKey) => {
+    setActiveTool(nextTool);
+    setMessage("");
+    await saveActiveTool(nextTool);
+  };
+
   const togglePasswordVisibility = (id: string) => {
     setVisiblePasswords((currentVisiblePasswords) => {
       const nextVisiblePasswords = new Set(currentVisiblePasswords);
@@ -336,6 +469,170 @@ function PopupApp() {
     setSavedEntriesTab(nextTab);
     setSavedEntriesPage(1);
   };
+
+  const handleNewDomainRule = () => {
+    setSelectedDomainRuleId(null);
+    setDomainSwitcherDraft(createDefaultDomainSwitcherDraft(activeTab));
+    setMessage("");
+  };
+
+  const handleSelectDomainRule = (rule: DomainSwitcherRule) => {
+    setSelectedDomainRuleId(rule.id);
+    setDomainSwitcherDraft(toDomainSwitcherDraft(rule));
+    setMessage("");
+  };
+
+  const handleSaveDomainRule = async () => {
+    if (pendingAction === "saveDomainRule") {
+      return;
+    }
+
+    if (!domainSwitcherDraft.onlineDomain.trim() || !domainSwitcherDraft.localDomain.trim()) {
+      setMessage(t.domainSwitcherRequired);
+      return;
+    }
+
+    if (!isValidDomainSwitcherDraft(domainSwitcherDraft)) {
+      setMessage(t.domainSwitcherInvalid);
+      return;
+    }
+
+    setPendingAction("saveDomainRule");
+
+    try {
+      const result = await saveDomainSwitcherRule(
+        domainSwitcherRules,
+        domainSwitcherDraft,
+        selectedDomainRuleId
+      );
+      setDomainSwitcherRules(result.rules);
+      setSelectedDomainRuleId(result.savedRule.id);
+      setDomainSwitcherDraft({
+        onlineDomain: result.savedRule.onlineDomain,
+        localDomain: result.savedRule.localDomain
+      });
+      setMessage(t.domainRuleSaved);
+    } catch {
+      setMessage(t.domainRuleSaveFailed);
+    } finally {
+      setPendingAction(null);
+    }
+  };
+
+  const handleDeleteDomainRule = async (rule: DomainSwitcherRule) => {
+    if (!window.confirm(t.domainRuleDeleteConfirm(rule.onlineDomain, rule.localDomain))) {
+      return;
+    }
+
+    const nextRules = await deleteDomainSwitcherRule(domainSwitcherRules, rule.id);
+    setDomainSwitcherRules(nextRules);
+
+    if (selectedDomainRuleId === rule.id) {
+      const [nextRule] = nextRules;
+      setSelectedDomainRuleId(nextRule?.id ?? null);
+      setDomainSwitcherDraft(
+        nextRule
+          ? {
+              onlineDomain: nextRule.onlineDomain,
+              localDomain: nextRule.localDomain
+            }
+          : emptyDomainSwitcherDraft
+      );
+    }
+
+    setMessage(t.domainRuleDeleted);
+  };
+
+  const handleSwitchDomain = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+
+    if (pendingAction === "switchDomain") {
+      return;
+    }
+
+    if (!activeTab?.url) {
+      setMessage(t.noActiveSite);
+      return;
+    }
+
+    const hasDraftInput =
+      Boolean(domainSwitcherDraft.onlineDomain.trim()) ||
+      Boolean(domainSwitcherDraft.localDomain.trim());
+    const hasCompleteDraft =
+      Boolean(domainSwitcherDraft.onlineDomain.trim()) &&
+      Boolean(domainSwitcherDraft.localDomain.trim());
+
+    if (hasDraftInput && !hasCompleteDraft) {
+      setMessage(t.domainSwitcherRequired);
+      return;
+    }
+
+    if (hasCompleteDraft && !isValidDomainSwitcherDraft(domainSwitcherDraft)) {
+      setMessage(t.domainSwitcherInvalid);
+      return;
+    }
+
+    if (!hasCompleteDraft && domainSwitcherRules.length === 0) {
+      setMessage(t.domainSwitcherRequired);
+      return;
+    }
+
+    setPendingAction("switchDomain");
+
+    try {
+      const candidates = [
+        ...(hasCompleteDraft ? [{ draft: domainSwitcherDraft, rule: null }] : []),
+        ...domainSwitcherRules
+          .filter((rule) => !isSameDomainSwitcherDraft(rule, domainSwitcherDraft))
+          .map((rule) => ({ draft: rule, rule }))
+      ];
+      const matchedCandidate = candidates
+        .map((candidate) => ({
+          ...candidate,
+          switchResult: buildSwitchedDomainUrl(activeTab.url, candidate.draft)
+        }))
+        .find((candidate) => candidate.switchResult);
+
+      if (!matchedCandidate?.switchResult) {
+        setMessage(t.domainSwitcherNoMatch);
+        return;
+      }
+
+      if (matchedCandidate.rule) {
+        setSelectedDomainRuleId(matchedCandidate.rule.id);
+        setDomainSwitcherDraft({
+          onlineDomain: matchedCandidate.rule.onlineDomain,
+          localDomain: matchedCandidate.rule.localDomain
+        });
+      }
+
+      await updateActiveTabUrl(activeTab.id, matchedCandidate.switchResult.nextUrl);
+      setActiveTab({
+        ...activeTab,
+        title: matchedCandidate.switchResult.nextUrl,
+        url: matchedCandidate.switchResult.nextUrl
+      });
+      setMessage(
+        matchedCandidate.switchResult.source === "online"
+          ? t.domainSwitcherSwitchedToLocal
+          : t.domainSwitcherSwitchedToOnline
+      );
+    } catch {
+      setMessage(t.domainSwitcherFailed);
+    } finally {
+      setPendingAction(null);
+    }
+  };
+
+  const currentDomainSwitchResult = activeTab?.url
+    ? buildSwitchedDomainUrl(activeTab.url, domainSwitcherDraft)
+    : null;
+  const switchDomainButtonLabel =
+    currentDomainSwitchResult?.source === "online"
+      ? t.switchToLocalDomain
+      : currentDomainSwitchResult?.source === "local"
+        ? t.switchToOnlineDomain
+        : t.switchDomain;
 
   return (
     <div className="app-shell">
@@ -368,49 +665,62 @@ function PopupApp() {
             aria-current={activeTool === "passwordManager" ? "page" : undefined}
             className="menu-item"
             type="button"
-            onClick={() => setActiveTool("passwordManager")}
+            onClick={() => handleToolChange("passwordManager")}
           >
             {t.passwordManager}
+          </button>
+          <button
+            aria-current={activeTool === "developerTools" ? "page" : undefined}
+            className="menu-item"
+            type="button"
+            onClick={() => handleToolChange("developerTools")}
+          >
+            {t.developerTools}
           </button>
         </aside>
 
         <main className="feature-main">
           {message ? <p className="toast" role="status">{message}</p> : null}
 
-          <section className="feature-panel" aria-label={t.passwordManager}>
-            <div className="feature-header">
-              <div>
-                <p className="eyebrow">{t.localPasswordManager}</p>
-                <h2>{t.passwordManager}</h2>
-              </div>
-              <div className="feature-actions">
-                <button
-                  className="primary-action"
-                  disabled={isActionPending}
-                  type="button"
-                  onClick={handleAdd}
-                >
-                  {t.add}
-                </button>
-                <button
-                  className="text-button"
-                  disabled={entries.length === 0 || isActionPending}
-                  type="button"
-                  onClick={handleExport}
-                >
-                  {t.export}
-                </button>
-                <label className="import-button" aria-disabled={isActionPending ? "true" : undefined}>
-                  {t.import}
-                  <input
-                    accept="application/json"
+          {activeTool === "passwordManager" ? (
+            <section className="feature-panel" aria-label={t.passwordManager}>
+              <div className="feature-header">
+                <div>
+                  <p className="eyebrow">{t.localPasswordManager}</p>
+                  <h2>{t.passwordManager}</h2>
+                </div>
+
+                <div className="feature-actions">
+                  <button
+                    className="primary-action"
                     disabled={isActionPending}
-                    type="file"
-                    onChange={handleImport}
-                  />
-                </label>
+                    type="button"
+                    onClick={handleAdd}
+                  >
+                    {t.add}
+                  </button>
+                  <button
+                    className="text-button"
+                    disabled={entries.length === 0 || isActionPending}
+                    type="button"
+                    onClick={handleExport}
+                  >
+                    {t.export}
+                  </button>
+                  <label
+                    className="import-button"
+                    aria-disabled={isActionPending ? "true" : undefined}
+                  >
+                    {t.import}
+                    <input
+                      accept="application/json"
+                      disabled={isActionPending}
+                      type="file"
+                      onChange={handleImport}
+                    />
+                  </label>
+                </div>
               </div>
-            </div>
 
             <section className="current-site" aria-label={t.currentSite}>
               <div>
@@ -591,6 +901,119 @@ function PopupApp() {
               ) : null}
             </section>
           </section>
+          ) : (
+          <section className="feature-panel" aria-label={t.developerTools}>
+            <div className="feature-header">
+              <div>
+                <p className="eyebrow">{t.frontendDeveloperTools}</p>
+                <h2>{t.developerTools}</h2>
+              </div>
+            </div>
+
+            <section className="current-site" aria-label={t.currentSite}>
+              <div>
+                <p className="section-label">{t.currentSite}</p>
+                <h3>
+                  {activeTab?.url
+                    ? `${activeTab.title || activeHostname}（${activeHostname}）`
+                    : t.noActiveSite}
+                </h3>
+                {activeTab?.url ? <p>{activeTab.url}</p> : <p>{t.noActiveSiteHelp}</p>}
+              </div>
+            </section>
+
+            <form className="developer-form" onSubmit={handleSwitchDomain}>
+              <div className="section-heading">
+                <h3>{t.domainSwitcher}</h3>
+                <button className="text-button" type="button" onClick={handleNewDomainRule}>
+                  {t.addDomainRule}
+                </button>
+              </div>
+              <div className="domain-grid">
+                <label>
+                  {t.onlineDomain}
+                  <input
+                    autoComplete="off"
+                    inputMode="url"
+                    placeholder={t.onlineDomainPlaceholder}
+                    required
+                    value={domainSwitcherDraft.onlineDomain}
+                    onChange={handleDomainSwitcherInputChange("onlineDomain")}
+                  />
+                </label>
+                <label>
+                  {t.localDomain}
+                  <input
+                    autoComplete="off"
+                    inputMode="url"
+                    placeholder={t.localDomainPlaceholder}
+                    required
+                    value={domainSwitcherDraft.localDomain}
+                    onChange={handleDomainSwitcherInputChange("localDomain")}
+                  />
+                </label>
+              </div>
+              <div className="developer-form-actions">
+                <button
+                  className="text-button"
+                  disabled={pendingAction === "saveDomainRule"}
+                  type="button"
+                  onClick={handleSaveDomainRule}
+                >
+                  {t.saveDomainRule}
+                </button>
+                <button
+                  className="primary-button"
+                  disabled={pendingAction === "switchDomain"}
+                  type="submit"
+                >
+                  {switchDomainButtonLabel}
+                </button>
+              </div>
+            </form>
+
+            <section className="entry-list" aria-label={t.savedDomainRules}>
+              <div className="section-heading">
+                <h3>{t.savedDomainRules}</h3>
+              </div>
+              {domainSwitcherRules.length > 0 ? (
+                <div className="domain-rule-list" role="list">
+                  <div className="domain-rule-header" aria-hidden="true">
+                    <span>{t.onlineDomain}</span>
+                    <span>{t.localDomain}</span>
+                    <span>{t.actions}</span>
+                  </div>
+                  {domainSwitcherRules.map((rule) => (
+                    <article className="domain-rule-item" key={rule.id} role="listitem">
+                      <span className="domain-rule-value" title={rule.onlineDomain}>
+                        {rule.onlineDomain}
+                      </span>
+                      <span className="domain-rule-value" title={rule.localDomain}>
+                        {rule.localDomain}
+                      </span>
+                      <div className="row-actions">
+                        {selectedDomainRuleId === rule.id ? (
+                          <span className="selected-label">{t.selected}</span>
+                        ) : (
+                          <button type="button" onClick={() => handleSelectDomainRule(rule)}>
+                            {t.select}
+                          </button>
+                        )}
+                        <button type="button" onClick={() => handleDeleteDomainRule(rule)}>
+                          {t.delete}
+                        </button>
+                      </div>
+                    </article>
+                  ))}
+                </div>
+              ) : (
+                <div className="empty-state">
+                  <p>{t.noDomainRules}</p>
+                </div>
+              )}
+            </section>
+          </section>
+          )}
         </main>
       </div>
     </div>
