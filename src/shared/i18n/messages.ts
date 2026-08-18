@@ -41,6 +41,25 @@ type Messages = {
   readonly aiAssistantNoHistory: string;
   readonly aiAssistantPrompt: string;
   readonly aiAssistantPromptPlaceholder: string;
+  readonly aiAssistantQuickActions: string;
+  readonly aiAssistantQuickIntro: string;
+  readonly aiAssistantQuickAnswer: string;
+  readonly aiAssistantQuickAnswerDescription: string;
+  readonly aiAssistantQuickAnswerPrompt: string;
+  readonly aiAssistantQuickDraft: string;
+  readonly aiAssistantQuickDraftDescription: string;
+  readonly aiAssistantQuickDraftPrompt: string;
+  readonly aiAssistantQuickTranslate: string;
+  readonly aiAssistantQuickTranslateDescription: string;
+  readonly aiAssistantQuickTranslatePrompt: string;
+  readonly aiAssistantQuickSummarize: string;
+  readonly aiAssistantQuickSummarizeDescription: string;
+  readonly aiAssistantQuickSummarizePrompt: string;
+  readonly aiAssistantQuickCreative: string;
+  readonly aiAssistantQuickCreativeDescription: string;
+  readonly aiAssistantQuickCreativePrompt: string;
+  readonly aiAssistantQuickChat: string;
+  readonly aiAssistantQuickChatDescription: string;
   readonly aiAssistantThinking: string;
   readonly aiAssistantTimeout: string;
   readonly aiAssistantUnavailable: string;
@@ -259,6 +278,25 @@ export const messages: Record<Locale, Messages> = {
     aiAssistantNoHistory: "暂无历史对话。",
     aiAssistantPrompt: "输入内容",
     aiAssistantPromptPlaceholder: "向本机 AI 提问",
+    aiAssistantQuickActions: "快捷入口",
+    aiAssistantQuickIntro: "选择一个任务进入全屏模式，再补充要处理的内容。",
+    aiAssistantQuickAnswer: "回答问题",
+    aiAssistantQuickAnswerDescription: "基于你提供的背景回答",
+    aiAssistantQuickAnswerPrompt: "请基于我提供的背景信息回答问题。\n\n背景：\n\n问题：",
+    aiAssistantQuickDraft: "生成文本",
+    aiAssistantQuickDraftDescription: "邮件、文案、代码说明等",
+    aiAssistantQuickDraftPrompt: "请根据以下要求生成文本。\n\n用途：\n风格：\n内容要点：",
+    aiAssistantQuickTranslate: "翻译文本",
+    aiAssistantQuickTranslateDescription: "保留原文结构和语气",
+    aiAssistantQuickTranslatePrompt: "请把下面的文本翻译成中文，并保留原有格式。\n\n",
+    aiAssistantQuickSummarize: "总结文本",
+    aiAssistantQuickSummarizeDescription: "提取重点、结论和行动项",
+    aiAssistantQuickSummarizePrompt: "请总结下面的文本，提取关键结论和行动项。\n\n",
+    aiAssistantQuickCreative: "创意写作",
+    aiAssistantQuickCreativeDescription: "故事、角色、对话和想法",
+    aiAssistantQuickCreativePrompt: "请基于以下设定进行创意写作。\n\n主题：\n风格：\n限制：",
+    aiAssistantQuickChat: "自由对话",
+    aiAssistantQuickChatDescription: "进入全屏后再开始对话",
     aiAssistantThinking: "思考中...",
     aiAssistantTimeout: "AI 助手响应超时，请直接重试。",
     aiAssistantUnavailable: "当前 Chrome 暂不支持内置 AI 助手，或模型不可用。",
@@ -476,6 +514,25 @@ export const messages: Record<Locale, Messages> = {
     aiAssistantNoHistory: "No chat history yet.",
     aiAssistantPrompt: "Message",
     aiAssistantPromptPlaceholder: "Ask the local AI assistant",
+    aiAssistantQuickActions: "Quick Actions",
+    aiAssistantQuickIntro: "Pick a task, then add the content in fullscreen mode.",
+    aiAssistantQuickAnswer: "Answer Questions",
+    aiAssistantQuickAnswerDescription: "Answer from your context",
+    aiAssistantQuickAnswerPrompt: "Answer the question using the context I provide.\n\nContext:\n\nQuestion:",
+    aiAssistantQuickDraft: "Generate Text",
+    aiAssistantQuickDraftDescription: "Email, copy, notes, code docs",
+    aiAssistantQuickDraftPrompt: "Generate text based on these requirements.\n\nPurpose:\nStyle:\nKey points:",
+    aiAssistantQuickTranslate: "Translate Text",
+    aiAssistantQuickTranslateDescription: "Keep structure and tone",
+    aiAssistantQuickTranslatePrompt: "Translate the following text into English and keep the original formatting.\n\n",
+    aiAssistantQuickSummarize: "Summarize Text",
+    aiAssistantQuickSummarizeDescription: "Extract points and actions",
+    aiAssistantQuickSummarizePrompt: "Summarize the following text and extract key conclusions and action items.\n\n",
+    aiAssistantQuickCreative: "Creative Writing",
+    aiAssistantQuickCreativeDescription: "Stories, roles, dialogs, ideas",
+    aiAssistantQuickCreativePrompt: "Write creatively based on this setup.\n\nTopic:\nStyle:\nConstraints:",
+    aiAssistantQuickChat: "Free Chat",
+    aiAssistantQuickChatDescription: "Continue in fullscreen mode",
     aiAssistantThinking: "Thinking...",
     aiAssistantTimeout: "AI Assistant timed out. Try again directly.",
     aiAssistantUnavailable: "Built-in AI Assistant is not supported in this Chrome version, or the model is unavailable.",

@@ -23,17 +23,6 @@ import {
   type AddressNavigationItem
 } from "../shared/addressNavigation/storage";
 import {
-  askChromeLanguageModelStreaming,
-  initializeChromeLanguageModel,
-  isChromeLanguageModelInitialized,
-  prewarmChromeLanguageModel,
-  type LanguageModelInitializationUpdate
-} from "../shared/aiAssistant/chromeLanguageModel";
-import {
-  getSavedAiAssistantInitialized,
-  saveAiAssistantInitialized
-} from "../shared/aiAssistant/storage";
-import {
   evaluateCalculatorExpression,
   formatCalculatorChineseDescription,
   formatCalculatorResult,
@@ -140,17 +129,8 @@ type PendingAction =
   | "saveCookieRequestUrl"
   | "saveAddressNavigation"
   | "translateText"
-  | "initializeAiAssistant"
-  | "askAiAssistant"
   | "saveTodo"
   | null;
-
-type AiAssistantMessage = {
-  readonly id: string;
-  readonly role: "user" | "assistant";
-  readonly content: string;
-};
-type AiAssistantInitializationStatus = "checking" | "needed" | "initializing" | "ready";
 
 const emptyForm: FormState = {
   displayName: "",
@@ -471,11 +451,6 @@ function PopupApp() {
     useState<TranslationLanguageCode>("zh-Hans");
   const [translationSourceText, setTranslationSourceText] = useState("");
   const [translationResult, setTranslationResult] = useState("");
-  const [aiAssistantMessages, setAiAssistantMessages] = useState<AiAssistantMessage[]>([]);
-  const [aiAssistantInput, setAiAssistantInput] = useState("");
-  const [aiAssistantInitializationStatus, setAiAssistantInitializationStatus] =
-    useState<AiAssistantInitializationStatus>("checking");
-  const [aiAssistantInitializationDetail, setAiAssistantInitializationDetail] = useState("");
   const [calculatorExpression, setCalculatorExpression] = useState("");
   const [calculatorResult, setCalculatorResult] = useState("");
   const [calculatorResultDescription, setCalculatorResultDescription] = useState("");
@@ -494,10 +469,8 @@ function PopupApp() {
   const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null);
   const formRef = useRef<HTMLFormElement | null>(null);
   const featureMainRef = useRef<HTMLElement | null>(null);
-  const aiChatListRef = useRef<HTMLDivElement | null>(null);
   const t = messages[locale];
   const isActionPending = pendingAction !== null || pendingDeleteId !== null;
-  const isAiAssistantReady = aiAssistantInitializationStatus === "ready";
 
   useEffect(() => {
     requestSidePanelClose();
@@ -506,9 +479,6 @@ function PopupApp() {
     void getSavedTranslationLanguages().then((savedLanguages) => {
       setTranslationSourceLanguage(savedLanguages.sourceLanguage);
       setTranslationTargetLanguage(savedLanguages.targetLanguage);
-    });
-    void getSavedAiAssistantInitialized().then((isInitialized) => {
-      setAiAssistantInitializationStatus(isInitialized ? "ready" : "needed");
     });
     void getSavedMenuSettings().then(setMenuSettings);
     void getSavedTextCompareState().then((savedState) => {
@@ -641,37 +611,6 @@ function PopupApp() {
       });
     });
   }, [activeTool, translationSourceLanguage, translationTargetLanguage]);
-
-  useEffect(() => {
-    if (
-      activeTool !== "aiAssistant" ||
-      aiAssistantInitializationStatus !== "ready" ||
-      isChromeLanguageModelInitialized()
-    ) {
-      return;
-    }
-
-    return scheduleIdleTask(() => {
-      void prewarmChromeLanguageModel();
-    });
-  }, [activeTool, aiAssistantInitializationStatus]);
-
-  useEffect(() => {
-    if (activeTool !== "aiAssistant") {
-      return;
-    }
-
-    const chatList = aiChatListRef.current;
-
-    if (!chatList) {
-      return;
-    }
-
-    chatList.scrollTo({
-      top: chatList.scrollHeight,
-      behavior: "smooth"
-    });
-  }, [activeTool, aiAssistantMessages]);
 
   const matchedEntries = useMemo(
     () =>
@@ -889,155 +828,6 @@ function PopupApp() {
     } finally {
       setPendingAction(null);
     }
-  };
-
-  const handleAiAssistantInputChange = (event: ChangeEvent<HTMLTextAreaElement>) => {
-    setAiAssistantInput(event.target.value);
-  };
-
-  const getAiAssistantErrorMessage = (error: unknown): string => {
-    const message = error instanceof Error ? error.message : "";
-
-    if (message === "LANGUAGE_MODEL_TIMEOUT") {
-      return t.aiAssistantTimeout;
-    }
-
-    if (message === "LANGUAGE_MODEL_UNSUPPORTED" || message === "LANGUAGE_MODEL_UNAVAILABLE") {
-      return t.aiAssistantUnavailable;
-    }
-
-    return t.aiAssistantFailed;
-  };
-
-  const getAiAssistantInitializationDetail = (
-    update: LanguageModelInitializationUpdate
-  ): string => {
-    if (update.phase === "checking") {
-      return t.aiAssistantInitializationChecking;
-    }
-
-    if (update.phase === "creating") {
-      return t.aiAssistantInitializationCreating;
-    }
-
-    if (update.phase === "warming") {
-      return t.aiAssistantInitializationWarming;
-    }
-
-    if (update.phase === "downloading") {
-      if (typeof update.downloadProgress === "number") {
-        return `${t.aiAssistantInitializationDownloading} ${Math.round(
-          update.downloadProgress * 100
-        )}%`;
-      }
-
-      return t.aiAssistantInitializationDownloading;
-    }
-
-    return t.aiAssistantInitialized;
-  };
-
-  const handleInitializeAiAssistant = async () => {
-    if (pendingAction === "initializeAiAssistant") {
-      return;
-    }
-
-    setAiAssistantInitializationStatus("initializing");
-    setAiAssistantInitializationDetail(t.aiAssistantInitializationChecking);
-    setPendingAction("initializeAiAssistant");
-
-    try {
-      await initializeChromeLanguageModel((update) => {
-        setAiAssistantInitializationDetail(getAiAssistantInitializationDetail(update));
-      });
-      await saveAiAssistantInitialized(true);
-      setAiAssistantInitializationStatus("ready");
-      setAiAssistantInitializationDetail("");
-      setMessage(t.aiAssistantInitialized);
-    } catch (error) {
-      setAiAssistantInitializationStatus("needed");
-      setAiAssistantInitializationDetail("");
-      setMessage(getAiAssistantErrorMessage(error));
-    } finally {
-      setPendingAction(null);
-    }
-  };
-
-  const handleAskAiAssistant = async (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
-
-    if (pendingAction === "askAiAssistant") {
-      return;
-    }
-
-    const prompt = aiAssistantInput.trim();
-
-    if (!prompt) {
-      return;
-    }
-
-    if (!isAiAssistantReady) {
-      setMessage(t.aiAssistantInitializeFirst);
-      return;
-    }
-
-    const userMessage: AiAssistantMessage = {
-      id: createClientId("ai-user"),
-      role: "user",
-      content: prompt
-    };
-    const assistantMessageId = createClientId("ai-assistant");
-    const pendingAssistantMessage: AiAssistantMessage = {
-      id: assistantMessageId,
-      role: "assistant",
-      content: t.aiAssistantGenerating
-    };
-
-    setAiAssistantMessages((currentMessages) => [
-      ...currentMessages,
-      userMessage,
-      pendingAssistantMessage
-    ]);
-    setAiAssistantInput("");
-    setPendingAction("askAiAssistant");
-
-    try {
-      let nextAnswer = "";
-      await askChromeLanguageModelStreaming(prompt, (chunk) => {
-        nextAnswer += chunk;
-        setAiAssistantMessages((currentMessages) =>
-          currentMessages.map((chatMessage) =>
-            chatMessage.id === assistantMessageId
-              ? {
-                  ...chatMessage,
-                  content: nextAnswer
-                }
-              : chatMessage
-          )
-        );
-      });
-    } catch (error) {
-      const message = error instanceof Error ? error.message : "";
-
-      setAiAssistantMessages((currentMessages) =>
-        currentMessages.filter((chatMessage) => chatMessage.id !== assistantMessageId)
-      );
-
-      if (message === "LANGUAGE_MODEL_UNAVAILABLE" || message === "LANGUAGE_MODEL_UNSUPPORTED") {
-        setAiAssistantInitializationStatus("needed");
-        void saveAiAssistantInitialized(false);
-      }
-
-      setMessage(getAiAssistantErrorMessage(error));
-    } finally {
-      setPendingAction(null);
-    }
-  };
-
-  const handleClearAiAssistant = () => {
-    setAiAssistantMessages([]);
-    setAiAssistantInput("");
-    setMessage("");
   };
 
   const handleAddressNavigationDraftChange =
@@ -1471,11 +1261,18 @@ function PopupApp() {
     window.open(optionsUrl, "_blank", "noopener,noreferrer");
   };
 
-  const handleOpenAiAssistantFullscreen = () => {
+  const handleOpenAiAssistantFullscreen = (prompt = "") => {
+    const query = new URLSearchParams({ tool: "aiAssistant" });
+
+    if (prompt) {
+      query.set("prompt", prompt);
+    }
+
+    const optionsPath = `options.html?${query.toString()}`;
     const optionsUrl =
       typeof chrome !== "undefined" && chrome.runtime?.getURL
-        ? chrome.runtime.getURL("options.html?tool=aiAssistant")
-        : "/options.html?tool=aiAssistant";
+        ? chrome.runtime.getURL(optionsPath)
+        : `/${optionsPath}`;
 
     window.open(optionsUrl, "_blank", "noopener,noreferrer");
   };
@@ -2877,93 +2674,62 @@ function PopupApp() {
                   className="text-button"
                   title={t.aiAssistantFullscreenHint}
                   type="button"
-                  onClick={handleOpenAiAssistantFullscreen}
+                  onClick={() => handleOpenAiAssistantFullscreen()}
                 >
                   {t.aiAssistantFullscreen}
-                </button>
-                <button
-                  className="text-button"
-                  disabled={aiAssistantMessages.length === 0 && !aiAssistantInput}
-                  type="button"
-                  onClick={handleClearAiAssistant}
-                >
-                  {t.clear}
                 </button>
               </div>
             </div>
 
-            <section className="ai-assistant-panel" aria-label={t.aiAssistant}>
-              <div className="developer-form ai-chat-surface">
-                {!isAiAssistantReady ? (
-                  <div className="ai-initialization-panel">
-                    <div className="ai-initialization-copy">
-                      <strong>{t.aiAssistantInitializeFirst}</strong>
-                      {aiAssistantInitializationDetail ? (
-                        <span>{aiAssistantInitializationDetail}</span>
-                      ) : null}
-                    </div>
-                    <button
-                      className="primary-button"
-                      disabled={
-                        aiAssistantInitializationStatus === "checking" ||
-                        pendingAction === "initializeAiAssistant"
-                      }
-                      type="button"
-                      onClick={handleInitializeAiAssistant}
-                    >
-                      {aiAssistantInitializationStatus === "initializing" ||
-                      pendingAction === "initializeAiAssistant"
-                        ? t.aiAssistantInitializing
-                        : t.aiAssistantInitialize}
-                    </button>
-                  </div>
-                ) : null}
-
-                <div className="ai-chat-list" ref={aiChatListRef} role="log">
-                  {aiAssistantMessages.length > 0 ? (
-                    aiAssistantMessages.map((chatMessage) => (
-                      <article
-                        className={`ai-chat-message ai-chat-message-${chatMessage.role}`}
-                        key={chatMessage.id}
-                      >
-                        <div className="ai-chat-role">
-                          {chatMessage.role === "user" ? t.aiAssistantUser : t.aiAssistant}
-                        </div>
-                        <div className="ai-chat-content">{chatMessage.content}</div>
-                      </article>
-                    ))
-                  ) : (
-                    <div className="empty-state">
-                      <p>{t.aiAssistantEmpty}</p>
-                    </div>
-                  )}
-                </div>
+            <section className="ai-assistant-panel developer-form" aria-label={t.aiAssistant}>
+              <div className="ai-shortcuts-heading">
+                <h3>{t.aiAssistantQuickActions}</h3>
+                <p>{t.aiAssistantQuickIntro}</p>
               </div>
-
-              <form className="ai-chat-form" onSubmit={handleAskAiAssistant}>
-                <textarea
-                  aria-label={t.aiAssistantPrompt}
-                  placeholder={t.aiAssistantPromptPlaceholder}
-                  disabled={!isAiAssistantReady || pendingAction === "askAiAssistant"}
-                  value={aiAssistantInput}
-                  onChange={handleAiAssistantInputChange}
-                />
-                <div className="ai-chat-form-footer">
-                  <span>{t.aiAssistantPrompt}</span>
+              <div className="ai-shortcut-grid">
+                {[
+                  {
+                    title: t.aiAssistantQuickAnswer,
+                    description: t.aiAssistantQuickAnswerDescription,
+                    prompt: t.aiAssistantQuickAnswerPrompt
+                  },
+                  {
+                    title: t.aiAssistantQuickDraft,
+                    description: t.aiAssistantQuickDraftDescription,
+                    prompt: t.aiAssistantQuickDraftPrompt
+                  },
+                  {
+                    title: t.aiAssistantQuickTranslate,
+                    description: t.aiAssistantQuickTranslateDescription,
+                    prompt: t.aiAssistantQuickTranslatePrompt
+                  },
+                  {
+                    title: t.aiAssistantQuickSummarize,
+                    description: t.aiAssistantQuickSummarizeDescription,
+                    prompt: t.aiAssistantQuickSummarizePrompt
+                  },
+                  {
+                    title: t.aiAssistantQuickCreative,
+                    description: t.aiAssistantQuickCreativeDescription,
+                    prompt: t.aiAssistantQuickCreativePrompt
+                  },
+                  {
+                    title: t.aiAssistantQuickChat,
+                    description: t.aiAssistantQuickChatDescription,
+                    prompt: ""
+                  }
+                ].map((shortcut) => (
                   <button
-                    className="primary-button"
-                    disabled={
-                      !isAiAssistantReady ||
-                      pendingAction === "initializeAiAssistant" ||
-                      pendingAction === "askAiAssistant" ||
-                      !aiAssistantInput.trim()
-                    }
-                    type="submit"
+                    className="ai-shortcut-card"
+                    key={shortcut.title}
+                    type="button"
+                    onClick={() => handleOpenAiAssistantFullscreen(shortcut.prompt)}
                   >
-                    {pendingAction === "askAiAssistant" ? t.aiAssistantThinking : t.send}
+                    <span>{shortcut.title}</span>
+                    <small>{shortcut.description}</small>
                   </button>
-                </div>
-              </form>
+                ))}
+              </div>
             </section>
           </section>
           ) : activeTool === "settings" ? (

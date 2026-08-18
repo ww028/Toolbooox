@@ -63,10 +63,9 @@ function createConversationTitle(prompt: string): string {
 }
 
 function OptionsApp() {
-  const optionsTool =
-    new URLSearchParams(window.location.search).get("tool") === "aiAssistant"
-      ? "aiAssistant"
-      : "textCompare";
+  const searchParams = new URLSearchParams(window.location.search);
+  const optionsTool = searchParams.get("tool") === "aiAssistant" ? "aiAssistant" : "textCompare";
+  const initialAiAssistantPrompt = searchParams.get("prompt") ?? "";
   const [locale, setLocale] = useState<Locale>(getDefaultLocale());
   const [leftText, setLeftText] = useState("");
   const [rightText, setRightText] = useState("");
@@ -98,8 +97,12 @@ function OptionsApp() {
     void getAiAssistantConversations().then((conversations) => {
       setAiAssistantConversations(conversations);
 
-      const [latestConversation] = conversations;
+      if (initialAiAssistantPrompt) {
+        setAiAssistantInput(initialAiAssistantPrompt);
+        return;
+      }
 
+      const [latestConversation] = conversations;
       if (latestConversation) {
         setActiveAiAssistantConversationId(latestConversation.id);
         setAiAssistantMessages([...latestConversation.messages]);
@@ -113,7 +116,7 @@ function OptionsApp() {
         setDiffLines(createTextDiff(savedState.leftText, savedState.rightText));
       }
     });
-  }, []);
+  }, [initialAiAssistantPrompt]);
 
   const t = messages[locale];
   const isAiAssistantReady = aiAssistantInitializationStatus === "ready";

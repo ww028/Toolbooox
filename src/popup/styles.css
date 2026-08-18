@@ -126,6 +126,7 @@ h1 {
 .sidebar {
   display: flex;
   min-width: 0;
+  min-height: 0;
   flex-direction: column;
   gap: 8px;
   border-right: 1px solid rgba(199, 212, 227, 0.54);
@@ -137,7 +138,32 @@ h1 {
 
 .sidebar-menu {
   display: grid;
+  flex: 1 1 auto;
   gap: 8px;
+  min-height: 0;
+  margin-right: -10px;
+  overflow-x: hidden;
+  overflow-y: auto;
+  padding-right: 10px;
+  scrollbar-color: rgba(90, 116, 145, 0.34) transparent;
+  scrollbar-width: thin;
+}
+
+.sidebar-menu::-webkit-scrollbar {
+  width: 3px;
+}
+
+.sidebar-menu::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.sidebar-menu::-webkit-scrollbar-thumb {
+  border-radius: 999px;
+  background: rgba(90, 116, 145, 0.32);
+}
+
+.sidebar-menu::-webkit-scrollbar-thumb:hover {
+  background: rgba(90, 116, 145, 0.48);
 }
 
 .eyebrow,
@@ -658,12 +684,11 @@ h3 {
 }
 
 .ai-assistant-panel {
-  height: 100%;
   display: grid;
-  grid-template-rows: minmax(0, 1fr) auto;
-  gap: 10px;
+  align-content: start;
+  gap: 14px;
   min-height: 0;
-  overflow: hidden;
+  overflow-y: auto;
 }
 
 .ai-assistant-guide {
@@ -722,6 +747,62 @@ h3 {
   min-width: 0;
   color: #52667c;
   font-size: 12px;
+  line-height: 1.4;
+}
+
+.ai-shortcuts-heading {
+  display: grid;
+  gap: 4px;
+}
+
+.ai-shortcuts-heading h3 {
+  color: #202b3a;
+  font-size: 14px;
+  line-height: 1.35;
+}
+
+.ai-shortcuts-heading p {
+  color: #64778d;
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1.45;
+}
+
+.ai-shortcut-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.ai-shortcut-card {
+  display: grid;
+  min-height: 76px;
+  align-content: start;
+  gap: 6px;
+  border: 1px solid rgba(202, 215, 229, 0.78);
+  border-radius: 8px;
+  background: rgba(249, 252, 255, 0.72);
+  color: #202b3a;
+  padding: 12px;
+  text-align: left;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.86);
+}
+
+.ai-shortcut-card:hover {
+  border-color: rgba(15, 111, 159, 0.34);
+  background: rgba(231, 244, 251, 0.78);
+}
+
+.ai-shortcut-card span {
+  font-size: 14px;
+  font-weight: 800;
+  line-height: 1.35;
+}
+
+.ai-shortcut-card small {
+  color: #64778d;
+  font-size: 12px;
+  font-weight: 700;
   line-height: 1.4;
 }
 
