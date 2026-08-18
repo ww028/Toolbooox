@@ -21,6 +21,30 @@ type Messages = {
   readonly addressUrlCopied: string;
   readonly addressWebsite: string;
   readonly addressWebsitePlaceholder: string;
+  readonly aiAssistant: string;
+  readonly aiAssistantEmpty: string;
+  readonly aiAssistantFailed: string;
+  readonly aiAssistantFullscreen: string;
+  readonly aiAssistantFullscreenHint: string;
+  readonly aiAssistantGenerating: string;
+  readonly aiAssistantGuide: string;
+  readonly aiAssistantInitialize: string;
+  readonly aiAssistantInitializationChecking: string;
+  readonly aiAssistantInitializationCreating: string;
+  readonly aiAssistantInitializationDownloading: string;
+  readonly aiAssistantInitializationWarming: string;
+  readonly aiAssistantInitialized: string;
+  readonly aiAssistantInitializeFirst: string;
+  readonly aiAssistantInitializing: string;
+  readonly aiAssistantHistory: string;
+  readonly aiAssistantNewConversation: string;
+  readonly aiAssistantNoHistory: string;
+  readonly aiAssistantPrompt: string;
+  readonly aiAssistantPromptPlaceholder: string;
+  readonly aiAssistantThinking: string;
+  readonly aiAssistantTimeout: string;
+  readonly aiAssistantUnavailable: string;
+  readonly aiAssistantUser: string;
   readonly all: string;
   readonly calculator: string;
   readonly calculatorExpression: string;
@@ -87,6 +111,20 @@ type Messages = {
   readonly localDomainPlaceholder: string;
   readonly longTextCompare: string;
   readonly longTextCompareHelp: string;
+  readonly languageTranslation: string;
+  readonly sourceLanguage: string;
+  readonly swapLanguages: string;
+  readonly targetLanguage: string;
+  readonly textToTranslate: string;
+  readonly textToTranslatePlaceholder: string;
+  readonly translatedText: string;
+  readonly translate: string;
+  readonly translating: string;
+  readonly translationCopied: string;
+  readonly translationFailed: string;
+  readonly translationHelp: string;
+  readonly translationSameLanguage: string;
+  readonly translationUnavailable: string;
   readonly menu: string;
   readonly menuOrder: string;
   readonly menuSettings: string;
@@ -139,6 +177,7 @@ type Messages = {
   readonly select: string;
   readonly selected: string;
   readonly settings: string;
+  readonly send: string;
   readonly show: string;
   readonly sidePanelDemo: string;
   readonly sidePanelDemoHelp: string;
@@ -200,6 +239,30 @@ export const messages: Record<Locale, Messages> = {
     addressUrlCopied: "网址已复制。",
     addressWebsite: "网站",
     addressWebsitePlaceholder: "https://example.com",
+    aiAssistant: "AI 助手",
+    aiAssistantEmpty: "暂无对话。",
+    aiAssistantFailed: "AI 助手响应失败，请稍后重试。",
+    aiAssistantFullscreen: "全屏使用",
+    aiAssistantFullscreenHint: "长内容建议使用全屏版本，阅读和输入更舒服。",
+    aiAssistantGenerating: "正在生成...",
+    aiAssistantGuide: "更适合帮你处理已提供的文本，比如摘要、改写、翻译和整理格式；如果要问知识类问题，请把背景信息一起发给它。",
+    aiAssistantInitialize: "初始化本机 AI",
+    aiAssistantInitializationChecking: "正在检查本机模型状态...",
+    aiAssistantInitializationCreating: "正在创建本机 AI 会话...",
+    aiAssistantInitializationDownloading: "正在下载本机模型...",
+    aiAssistantInitializationWarming: "正在预热模型，完成后即可提问...",
+    aiAssistantInitialized: "本机 AI 已初始化。",
+    aiAssistantInitializeFirst: "请先初始化本机 AI。",
+    aiAssistantInitializing: "初始化中...",
+    aiAssistantHistory: "历史对话",
+    aiAssistantNewConversation: "新对话",
+    aiAssistantNoHistory: "暂无历史对话。",
+    aiAssistantPrompt: "输入内容",
+    aiAssistantPromptPlaceholder: "向本机 AI 提问",
+    aiAssistantThinking: "思考中...",
+    aiAssistantTimeout: "AI 助手响应超时，请直接重试。",
+    aiAssistantUnavailable: "当前 Chrome 暂不支持内置 AI 助手，或模型不可用。",
+    aiAssistantUser: "你",
     all: "全部",
     calculator: "计算器",
     calculatorExpression: "表达式",
@@ -267,6 +330,20 @@ export const messages: Record<Locale, Messages> = {
     localDomainPlaceholder: "localhost:5173",
     longTextCompare: "长文本对比",
     longTextCompareHelp: "适合粘贴较长文本进行全屏对比，所有内容仅在当前浏览器本地处理。",
+    languageTranslation: "语言翻译",
+    sourceLanguage: "源语言",
+    swapLanguages: "对调语言",
+    targetLanguage: "目标语言",
+    textToTranslate: "原文",
+    textToTranslatePlaceholder: "请输入需要翻译的文本",
+    translatedText: "译文",
+    translate: "翻译",
+    translating: "翻译中...",
+    translationCopied: "译文已复制。",
+    translationFailed: "翻译失败，请检查语言选择或稍后重试。",
+    translationHelp: "使用 Chrome 内置 AI 在本机完成翻译；如果模型或语言对不可用，会给出提示。",
+    translationSameLanguage: "源语言和目标语言不能相同。",
+    translationUnavailable: "当前 Chrome 暂不支持内置翻译，或该语言对不可用。",
     menu: "菜单",
     menuOrder: "菜单顺序",
     menuSettings: "菜单设置",
@@ -319,6 +396,7 @@ export const messages: Record<Locale, Messages> = {
     select: "选择",
     selected: "已选中",
     settings: "设置",
+    send: "发送",
     show: "显示",
     sidePanelDemo: "侧边栏 Demo",
     sidePanelDemoHelp: "这是 Chrome Side Panel 的最小演示页面，适合放置需要持续查看或频繁操作的工具。",
@@ -378,6 +456,30 @@ export const messages: Record<Locale, Messages> = {
     addressUrlCopied: "URL copied.",
     addressWebsite: "Website",
     addressWebsitePlaceholder: "https://example.com",
+    aiAssistant: "AI Assistant",
+    aiAssistantEmpty: "No conversation yet.",
+    aiAssistantFailed: "AI Assistant failed to respond. Try again later.",
+    aiAssistantFullscreen: "Open Fullscreen",
+    aiAssistantFullscreenHint: "Use the fullscreen version for longer content. Reading and writing are easier there.",
+    aiAssistantGenerating: "Generating...",
+    aiAssistantGuide: "Best for working with text you provide, such as summarizing, rewriting, translating, or formatting. For knowledge questions, include the needed context.",
+    aiAssistantInitialize: "Initialize Local AI",
+    aiAssistantInitializationChecking: "Checking local model status...",
+    aiAssistantInitializationCreating: "Creating local AI session...",
+    aiAssistantInitializationDownloading: "Downloading local model...",
+    aiAssistantInitializationWarming: "Warming up the model. You can ask questions after this finishes...",
+    aiAssistantInitialized: "Local AI initialized.",
+    aiAssistantInitializeFirst: "Initialize local AI first.",
+    aiAssistantInitializing: "Initializing...",
+    aiAssistantHistory: "History",
+    aiAssistantNewConversation: "New Chat",
+    aiAssistantNoHistory: "No chat history yet.",
+    aiAssistantPrompt: "Message",
+    aiAssistantPromptPlaceholder: "Ask the local AI assistant",
+    aiAssistantThinking: "Thinking...",
+    aiAssistantTimeout: "AI Assistant timed out. Try again directly.",
+    aiAssistantUnavailable: "Built-in AI Assistant is not supported in this Chrome version, or the model is unavailable.",
+    aiAssistantUser: "You",
     all: "All",
     calculator: "Calculator",
     calculatorExpression: "Expression",
@@ -445,6 +547,20 @@ export const messages: Record<Locale, Messages> = {
     localDomainPlaceholder: "localhost:5173",
     longTextCompare: "Long Text Compare",
     longTextCompareHelp: "Designed for comparing longer text in a full-page workspace. All content is processed locally in this browser.",
+    languageTranslation: "Language Translation",
+    sourceLanguage: "Source Language",
+    swapLanguages: "Swap languages",
+    targetLanguage: "Target Language",
+    textToTranslate: "Source Text",
+    textToTranslatePlaceholder: "Enter text to translate",
+    translatedText: "Translated Text",
+    translate: "Translate",
+    translating: "Translating...",
+    translationCopied: "Translation copied.",
+    translationFailed: "Translation failed. Check the language pair or try again later.",
+    translationHelp: "Translate locally with Chrome built-in AI. A message is shown if the model or language pair is unavailable.",
+    translationSameLanguage: "Source and target languages must be different.",
+    translationUnavailable: "Built-in translation is not supported in this Chrome version, or this language pair is unavailable.",
     menu: "Menu",
     menuOrder: "Menu order",
     menuSettings: "Menu Settings",
@@ -497,6 +613,7 @@ export const messages: Record<Locale, Messages> = {
     select: "Select",
     selected: "Selected",
     settings: "Settings",
+    send: "Send",
     show: "Show",
     sidePanelDemo: "Side Panel Demo",
     sidePanelDemoHelp: "This is a minimal Chrome Side Panel demo for tools that should stay visible while you browse.",

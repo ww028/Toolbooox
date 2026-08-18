@@ -1,3 +1,8 @@
+import {
+  getIndexedDbValue,
+  setIndexedDbValue
+} from "../storage/indexedDbKeyValue";
+
 export type TextCompareState = {
   readonly leftText: string;
   readonly rightText: string;
@@ -11,10 +16,6 @@ export const emptyTextCompareState: TextCompareState = {
 };
 
 const TEXT_COMPARE_STATE_STORAGE_KEY = "toolbooox.textCompareState";
-
-function hasChromeStorage(): boolean {
-  return typeof chrome !== "undefined" && Boolean(chrome.storage?.local);
-}
 
 function normalizeTextCompareState(value: unknown): TextCompareState {
   if (!value || typeof value !== "object") {
@@ -31,29 +32,9 @@ function normalizeTextCompareState(value: unknown): TextCompareState {
 }
 
 export async function getSavedTextCompareState(): Promise<TextCompareState> {
-  if (hasChromeStorage()) {
-    const result = await chrome.storage.local.get(TEXT_COMPARE_STATE_STORAGE_KEY);
-    return normalizeTextCompareState(result[TEXT_COMPARE_STATE_STORAGE_KEY]);
-  }
-
-  const rawState = window.localStorage.getItem(TEXT_COMPARE_STATE_STORAGE_KEY);
-
-  if (!rawState) {
-    return emptyTextCompareState;
-  }
-
-  try {
-    return normalizeTextCompareState(JSON.parse(rawState));
-  } catch {
-    return emptyTextCompareState;
-  }
+  return normalizeTextCompareState(await getIndexedDbValue(TEXT_COMPARE_STATE_STORAGE_KEY));
 }
 
 export async function saveTextCompareState(state: TextCompareState): Promise<void> {
-  if (hasChromeStorage()) {
-    await chrome.storage.local.set({ [TEXT_COMPARE_STATE_STORAGE_KEY]: state });
-    return;
-  }
-
-  window.localStorage.setItem(TEXT_COMPARE_STATE_STORAGE_KEY, JSON.stringify(state));
+  await setIndexedDbValue(TEXT_COMPARE_STATE_STORAGE_KEY, state);
 }

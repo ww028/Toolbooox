@@ -4,14 +4,15 @@ import type {
   PasswordVaultExport
 } from "./types";
 import { getHostname, normalizeUrl } from "./urlMatcher";
+import {
+  getIndexedDbValue,
+  setIndexedDbValue
+} from "../storage/indexedDbKeyValue";
 
-const LEGACY_STORAGE_KEY = "toolbooox.passwordVault.entries";
 const ENCRYPTION_KEY_STORAGE_KEY = "toolbooox.passwordVault.encryptionKey.v1";
 const DATABASE_NAME = "toolbooox.passwordVault";
 const DATABASE_VERSION = 1;
 const ENTRY_STORE_NAME = "passwordEntries";
-const METADATA_STORE_NAME = "metadata";
-const MIGRATION_METADATA_KEY = "legacyStorageMigrated";
 
 type PasswordVaultErrorCode = "DUPLICATE_ENTRY" | "INVALID_URL";
 
@@ -42,15 +43,6 @@ type PlainStoredPasswordEntry = PasswordEntry & {
 };
 
 type StoredPasswordEntry = EncryptedStoredPasswordEntry | PlainStoredPasswordEntry;
-
-type MetadataRecord = {
-  readonly key: string;
-  readonly value: unknown;
-};
-
-function hasChromeStorage(): boolean {
-  return typeof chrome !== "undefined" && Boolean(chrome.storage?.local);
-}
 
 function hasIndexedDb(): boolean {
   return typeof indexedDB !== "undefined";
@@ -84,23 +76,12 @@ function bytesToArrayBuffer(bytes: Uint8Array): ArrayBuffer {
 }
 
 async function readStoredEncryptionKey(): Promise<string | null> {
-  if (hasChromeStorage()) {
-    const result = await chrome.storage.local.get(ENCRYPTION_KEY_STORAGE_KEY);
-    return typeof result[ENCRYPTION_KEY_STORAGE_KEY] === "string"
-      ? result[ENCRYPTION_KEY_STORAGE_KEY]
-      : null;
-  }
-
-  return window.localStorage.getItem(ENCRYPTION_KEY_STORAGE_KEY);
+  const storedKey = await getIndexedDbValue(ENCRYPTION_KEY_STORAGE_KEY);
+  return typeof storedKey === "string" ? storedKey : null;
 }
 
 async function writeStoredEncryptionKey(rawKey: string): Promise<void> {
-  if (hasChromeStorage()) {
-    await chrome.storage.local.set({ [ENCRYPTION_KEY_STORAGE_KEY]: rawKey });
-    return;
-  }
-
-  window.localStorage.setItem(ENCRYPTION_KEY_STORAGE_KEY, rawKey);
+  await setIndexedDbValue(ENCRYPTION_KEY_STORAGE_KEY, rawKey);
 }
 
 async function getEncryptionKey(): Promise<CryptoKey> {
@@ -183,70 +164,11 @@ function openDatabase(): Promise<IDBDatabase> {
         entryStore.createIndex("createdAt", "createdAt", { unique: false });
         entryStore.createIndex("updatedAt", "updatedAt", { unique: false });
       }
-
-      if (!database.objectStoreNames.contains(METADATA_STORE_NAME)) {
-        database.createObjectStore(METADATA_STORE_NAME, {
-          keyPath: "key"
-        });
-      }
     });
 
     request.addEventListener("success", () => resolve(request.result));
     request.addEventListener("error", () => reject(request.error));
   });
-}
-
-async function readLegacyEntries(): Promise<PasswordEntry[]> {
-  if (hasChromeStorage()) {
-    const result = await chrome.storage.local.get(LEGACY_STORAGE_KEY);
-    return Array.isArray(result[LEGACY_STORAGE_KEY]) ? result[LEGACY_STORAGE_KEY] : [];
-  }
-
-  const rawValue = window.localStorage.getItem(LEGACY_STORAGE_KEY);
-
-  if (!rawValue) {
-    return [];
-  }
-
-  try {
-    const parsedValue: unknown = JSON.parse(rawValue);
-    return Array.isArray(parsedValue) ? (parsedValue as PasswordEntry[]) : [];
-  } catch {
-    return [];
-  }
-}
-
-async function clearLegacyEntries(): Promise<void> {
-  if (hasChromeStorage()) {
-    await chrome.storage.local.remove(LEGACY_STORAGE_KEY);
-    return;
-  }
-
-  window.localStorage.removeItem(LEGACY_STORAGE_KEY);
-}
-
-async function writeLegacyEntries(entries: readonly PasswordEntry[]): Promise<void> {
-  if (hasChromeStorage()) {
-    await chrome.storage.local.set({ [LEGACY_STORAGE_KEY]: entries });
-    return;
-  }
-
-  window.localStorage.setItem(LEGACY_STORAGE_KEY, JSON.stringify(entries));
-}
-
-async function getMetadata(database: IDBDatabase, key: string): Promise<unknown> {
-  const transaction = database.transaction(METADATA_STORE_NAME, "readonly");
-  const record = await requestToPromise<MetadataRecord | undefined>(
-    transaction.objectStore(METADATA_STORE_NAME).get(key)
-  );
-
-  return record?.value;
-}
-
-async function setMetadata(database: IDBDatabase, key: string, value: unknown): Promise<void> {
-  const transaction = database.transaction(METADATA_STORE_NAME, "readwrite");
-  transaction.objectStore(METADATA_STORE_NAME).put({ key, value });
-  await transactionToPromise(transaction);
 }
 
 async function toStoredEntry(
@@ -316,62 +238,32 @@ async function writeIndexedDbEntries(
   await transactionToPromise(transaction);
 }
 
-function mergeEntries(
-  currentEntries: readonly PasswordEntry[],
-  legacyEntries: readonly PasswordEntry[]
-): PasswordEntry[] {
-  const seenIds = new Set<string>();
-  const mergedEntries: PasswordEntry[] = [];
-
-  [...currentEntries, ...legacyEntries].forEach((entry) => {
-    if (seenIds.has(entry.id)) {
-      return;
-    }
-
-    seenIds.add(entry.id);
-    mergedEntries.push(entry);
-  });
-
-  return mergedEntries;
-}
-
-async function migrateLegacyStorage(database: IDBDatabase): Promise<void> {
-  const hasMigrated = await getMetadata(database, MIGRATION_METADATA_KEY);
-
-  if (hasMigrated === true) {
-    return;
-  }
-
-  const legacyEntries = await readLegacyEntries();
-  const currentEntries = await readIndexedDbEntries(database);
-
-  if (legacyEntries.length > 0) {
-    await writeIndexedDbEntries(database, mergeEntries(currentEntries, legacyEntries));
-  }
-
-  await clearLegacyEntries();
-  await setMetadata(database, MIGRATION_METADATA_KEY, true);
-}
-
 async function readEntries(): Promise<PasswordEntry[]> {
   if (!hasIndexedDb()) {
-    return readLegacyEntries();
+    return [];
   }
 
   const database = await openDatabase();
-  await migrateLegacyStorage(database);
-  return readIndexedDbEntries(database);
+
+  try {
+    return await readIndexedDbEntries(database);
+  } finally {
+    database.close();
+  }
 }
 
 async function writeEntries(entries: readonly PasswordEntry[]): Promise<void> {
   if (!hasIndexedDb()) {
-    await writeLegacyEntries(entries);
-    return;
+    throw new Error("INDEXED_DB_UNAVAILABLE");
   }
 
   const database = await openDatabase();
-  await migrateLegacyStorage(database);
-  await writeIndexedDbEntries(database, entries);
+
+  try {
+    await writeIndexedDbEntries(database, entries);
+  } finally {
+    database.close();
+  }
 }
 
 function createId(): string {

@@ -1,3 +1,8 @@
+import {
+  getIndexedDbValue,
+  setIndexedDbValue
+} from "../storage/indexedDbKeyValue";
+
 export type DomainSwitcherDraft = {
   readonly onlineDomain: string;
   readonly localDomain: string;
@@ -17,10 +22,6 @@ export type DomainSwitchResult = {
 };
 
 const DOMAIN_SWITCHER_STORAGE_KEY = "toolbooox.devTools.domainSwitcher";
-
-function hasChromeStorage(): boolean {
-  return typeof chrome !== "undefined" && Boolean(chrome.storage?.local);
-}
 
 function isDomainSwitcherDraft(value: unknown): value is DomainSwitcherDraft {
   if (!value || typeof value !== "object") {
@@ -138,12 +139,7 @@ function normalizeStoredRules(value: unknown): DomainSwitcherRule[] {
 }
 
 async function writeStoredRules(rules: readonly DomainSwitcherRule[]): Promise<void> {
-  if (hasChromeStorage()) {
-    await chrome.storage.local.set({ [DOMAIN_SWITCHER_STORAGE_KEY]: rules });
-    return;
-  }
-
-  window.localStorage.setItem(DOMAIN_SWITCHER_STORAGE_KEY, JSON.stringify(rules));
+  await setIndexedDbValue(DOMAIN_SWITCHER_STORAGE_KEY, rules);
 }
 
 export function isValidDomainSwitcherDraft(draft: DomainSwitcherDraft): boolean {
@@ -187,22 +183,7 @@ export function buildSwitchedDomainUrl(
 }
 
 export async function getDomainSwitcherRules(): Promise<DomainSwitcherRule[]> {
-  if (hasChromeStorage()) {
-    const result = await chrome.storage.local.get(DOMAIN_SWITCHER_STORAGE_KEY);
-    return normalizeStoredRules(result[DOMAIN_SWITCHER_STORAGE_KEY]);
-  }
-
-  const rawRules = window.localStorage.getItem(DOMAIN_SWITCHER_STORAGE_KEY);
-
-  if (!rawRules) {
-    return [];
-  }
-
-  try {
-    return normalizeStoredRules(JSON.parse(rawRules));
-  } catch {
-    return [];
-  }
+  return normalizeStoredRules(await getIndexedDbValue(DOMAIN_SWITCHER_STORAGE_KEY));
 }
 
 export async function saveDomainSwitcherRule(

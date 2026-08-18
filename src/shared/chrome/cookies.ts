@@ -1,3 +1,8 @@
+import {
+  getIndexedDbValue,
+  setIndexedDbValue
+} from "../storage/indexedDbKeyValue";
+
 export type BrowserCookie = chrome.cookies.Cookie;
 
 export type RequestCookiePair = {
@@ -19,13 +24,8 @@ export type CookieCaptureConfig = {
   readonly requestUrl: string;
 };
 
-const COOKIE_CAPTURE_REQUEST_URL_KEY = "toolbooox.cookieViewer.requestUrl";
 const COOKIE_CAPTURE_CONFIGS_KEY = "toolbooox.cookieViewer.configs";
 const CAPTURED_COOKIE_HEADER_KEY = "toolbooox.cookieViewer.capturedHeader";
-
-function hasChromeStorage(): boolean {
-  return typeof chrome !== "undefined" && Boolean(chrome.storage?.local);
-}
 
 function hasChromeSessionStorage(): boolean {
   return typeof chrome !== "undefined" && Boolean(chrome.storage?.session);
@@ -166,25 +166,16 @@ export async function getCookiesForUrl(url: string): Promise<BrowserCookie[]> {
   });
 }
 
+function normalizeCookieCaptureConfigs(value: unknown): CookieCaptureConfig[] {
+  return Array.isArray(value) ? value.filter(isCookieCaptureConfig) : [];
+}
+
+async function saveCookieCaptureConfigs(configs: readonly CookieCaptureConfig[]): Promise<void> {
+  await setIndexedDbValue(COOKIE_CAPTURE_CONFIGS_KEY, configs);
+}
+
 export async function getCookieCaptureConfigs(): Promise<CookieCaptureConfig[]> {
-  if (hasChromeStorage()) {
-    const result = await chrome.storage.local.get(COOKIE_CAPTURE_CONFIGS_KEY);
-    const configs = result[COOKIE_CAPTURE_CONFIGS_KEY];
-    return Array.isArray(configs) ? configs.filter(isCookieCaptureConfig) : [];
-  }
-
-  const rawConfigs = window.localStorage.getItem(COOKIE_CAPTURE_CONFIGS_KEY);
-
-  if (!rawConfigs) {
-    return [];
-  }
-
-  try {
-    const configs: unknown = JSON.parse(rawConfigs);
-    return Array.isArray(configs) ? configs.filter(isCookieCaptureConfig) : [];
-  } catch {
-    return [];
-  }
+  return normalizeCookieCaptureConfigs(await getIndexedDbValue(COOKIE_CAPTURE_CONFIGS_KEY));
 }
 
 export async function getCookieCaptureRequestUrl(pageHostname: string): Promise<string> {
@@ -226,14 +217,7 @@ export async function saveCookieCaptureRequestUrl(
       )
     : [nextConfig, ...configs];
 
-  if (hasChromeStorage()) {
-    await chrome.storage.local.set({ [COOKIE_CAPTURE_CONFIGS_KEY]: nextConfigs });
-    await chrome.storage.local.remove(COOKIE_CAPTURE_REQUEST_URL_KEY);
-    return normalizedUrl;
-  }
-
-  window.localStorage.setItem(COOKIE_CAPTURE_CONFIGS_KEY, JSON.stringify(nextConfigs));
-  window.localStorage.removeItem(COOKIE_CAPTURE_REQUEST_URL_KEY);
+  await saveCookieCaptureConfigs(nextConfigs);
   return normalizedUrl;
 }
 
@@ -244,24 +228,7 @@ export async function getCapturedCookieHeader(): Promise<CapturedCookieHeader | 
     return isCapturedCookieHeader(capturedHeader) ? capturedHeader : null;
   }
 
-  if (hasChromeStorage()) {
-    const result = await chrome.storage.local.get(CAPTURED_COOKIE_HEADER_KEY);
-    const capturedHeader = result[CAPTURED_COOKIE_HEADER_KEY];
-    return isCapturedCookieHeader(capturedHeader) ? capturedHeader : null;
-  }
-
-  const rawHeader = window.localStorage.getItem(CAPTURED_COOKIE_HEADER_KEY);
-
-  if (!rawHeader) {
-    return null;
-  }
-
-  try {
-    const parsedHeader: unknown = JSON.parse(rawHeader);
-    return isCapturedCookieHeader(parsedHeader) ? parsedHeader : null;
-  } catch {
-    return null;
-  }
+  return null;
 }
 
 export async function clearCapturedCookieHeader(): Promise<void> {
@@ -270,12 +237,6 @@ export async function clearCapturedCookieHeader(): Promise<void> {
     return;
   }
 
-  if (hasChromeStorage()) {
-    await chrome.storage.local.remove(CAPTURED_COOKIE_HEADER_KEY);
-    return;
-  }
-
-  window.localStorage.removeItem(CAPTURED_COOKIE_HEADER_KEY);
 }
 
 export function subscribeCapturedCookieHeaderChanges(callback: () => void): () => void {
@@ -284,10 +245,7 @@ export function subscribeCapturedCookieHeaderChanges(callback: () => void): () =
   }
 
   const listener = (changes: Record<string, chrome.storage.StorageChange>, areaName: string) => {
-    if (
-      (areaName === "session" || areaName === "local") &&
-      changes[CAPTURED_COOKIE_HEADER_KEY]
-    ) {
+    if (areaName === "session" && changes[CAPTURED_COOKIE_HEADER_KEY]) {
       callback();
     }
   };
@@ -305,10 +263,4 @@ export async function saveCapturedCookieHeader(header: CapturedCookieHeader): Pr
     return;
   }
 
-  if (hasChromeStorage()) {
-    await chrome.storage.local.set({ [CAPTURED_COOKIE_HEADER_KEY]: header });
-    return;
-  }
-
-  window.localStorage.setItem(CAPTURED_COOKIE_HEADER_KEY, JSON.stringify(header));
 }

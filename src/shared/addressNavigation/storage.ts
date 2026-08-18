@@ -13,10 +13,12 @@ export type AddressNavigationDraft = {
   readonly url: string;
 };
 
-const ADDRESS_NAVIGATION_STORAGE_KEY = "toolbooox.addressNavigation.items";
+const DATABASE_NAME = "toolbooox.addressNavigation";
+const DATABASE_VERSION = 1;
+const ITEM_STORE_NAME = "items";
 
-function hasChromeStorage(): boolean {
-  return typeof chrome !== "undefined" && Boolean(chrome.storage?.local);
+function hasIndexedDb(): boolean {
+  return typeof indexedDB !== "undefined";
 }
 
 function isAddressNavigationItem(value: unknown): value is AddressNavigationItem {
@@ -45,6 +47,69 @@ function normalizeAddressNavigationItems(value: unknown): AddressNavigationItem[
         url: item.url.trim()
       }))
     : [];
+}
+
+function requestToPromise<T>(request: IDBRequest<T>): Promise<T> {
+  return new Promise((resolve, reject) => {
+    request.addEventListener("success", () => resolve(request.result));
+    request.addEventListener("error", () => reject(request.error));
+  });
+}
+
+function transactionToPromise(transaction: IDBTransaction): Promise<void> {
+  return new Promise((resolve, reject) => {
+    transaction.addEventListener("complete", () => resolve());
+    transaction.addEventListener("abort", () => reject(transaction.error));
+    transaction.addEventListener("error", () => reject(transaction.error));
+  });
+}
+function openDatabase(): Promise<IDBDatabase> {
+  return new Promise((resolve, reject) => {
+    const request = indexedDB.open(DATABASE_NAME, DATABASE_VERSION);
+
+    request.addEventListener("upgradeneeded", () => {
+      const database = request.result;
+
+      if (!database.objectStoreNames.contains(ITEM_STORE_NAME)) {
+        const itemStore = database.createObjectStore(ITEM_STORE_NAME, {
+          keyPath: "id"
+        });
+        itemStore.createIndex("createdAt", "createdAt", { unique: false });
+        itemStore.createIndex("updatedAt", "updatedAt", { unique: false });
+      }
+    });
+
+    request.addEventListener("success", () => resolve(request.result));
+    request.addEventListener("error", () => reject(request.error));
+  });
+}
+
+async function readIndexedDbAddressNavigationItems(
+  database: IDBDatabase
+): Promise<AddressNavigationItem[]> {
+  const transaction = database.transaction(ITEM_STORE_NAME, "readonly");
+  const items = await requestToPromise<AddressNavigationItem[]>(
+    transaction.objectStore(ITEM_STORE_NAME).getAll()
+  );
+
+  return normalizeAddressNavigationItems(items).sort((left, right) =>
+    right.createdAt.localeCompare(left.createdAt)
+  );
+}
+
+async function replaceIndexedDbAddressNavigationItems(
+  database: IDBDatabase,
+  items: readonly AddressNavigationItem[]
+): Promise<void> {
+  const transaction = database.transaction(ITEM_STORE_NAME, "readwrite");
+  const itemStore = transaction.objectStore(ITEM_STORE_NAME);
+  itemStore.clear();
+
+  normalizeAddressNavigationItems(items).forEach((item) => {
+    itemStore.put(item);
+  });
+
+  await transactionToPromise(transaction);
 }
 
 function isIpv4Hostname(hostname: string): boolean {
@@ -127,30 +192,30 @@ export function isValidAddressNavigationUrl(value: string): boolean {
 async function writeAddressNavigationItems(
   items: readonly AddressNavigationItem[]
 ): Promise<void> {
-  if (hasChromeStorage()) {
-    await chrome.storage.local.set({ [ADDRESS_NAVIGATION_STORAGE_KEY]: items });
-    return;
+  if (!hasIndexedDb()) {
+    throw new Error("INDEXED_DB_UNAVAILABLE");
   }
 
-  window.localStorage.setItem(ADDRESS_NAVIGATION_STORAGE_KEY, JSON.stringify(items));
+  const database = await openDatabase();
+
+  try {
+    await replaceIndexedDbAddressNavigationItems(database, items);
+  } finally {
+    database.close();
+  }
 }
 
 export async function getAddressNavigationItems(): Promise<AddressNavigationItem[]> {
-  if (hasChromeStorage()) {
-    const result = await chrome.storage.local.get(ADDRESS_NAVIGATION_STORAGE_KEY);
-    return normalizeAddressNavigationItems(result[ADDRESS_NAVIGATION_STORAGE_KEY]);
-  }
-
-  const rawItems = window.localStorage.getItem(ADDRESS_NAVIGATION_STORAGE_KEY);
-
-  if (!rawItems) {
+  if (!hasIndexedDb()) {
     return [];
   }
+
+  const database = await openDatabase();
 
   try {
-    return normalizeAddressNavigationItems(JSON.parse(rawItems));
-  } catch {
-    return [];
+    return await readIndexedDbAddressNavigationItems(database);
+  } finally {
+    database.close();
   }
 }
 

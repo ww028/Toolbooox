@@ -12,10 +12,12 @@ export type TodoDraft = {
   readonly content: string;
 };
 
-const TODO_STORAGE_KEY = "toolbooox.todos.items";
+const DATABASE_NAME = "toolbooox.todos";
+const DATABASE_VERSION = 1;
+const ITEM_STORE_NAME = "items";
 
-function hasChromeStorage(): boolean {
-  return typeof chrome !== "undefined" && Boolean(chrome.storage?.local);
+function hasIndexedDb(): boolean {
+  return typeof indexedDB !== "undefined";
 }
 
 function isTodoItem(value: unknown): value is TodoItem {
@@ -45,31 +47,95 @@ function normalizeTodoItems(value: unknown): TodoItem[] {
     : [];
 }
 
+function requestToPromise<T>(request: IDBRequest<T>): Promise<T> {
+  return new Promise((resolve, reject) => {
+    request.addEventListener("success", () => resolve(request.result));
+    request.addEventListener("error", () => reject(request.error));
+  });
+}
+
+function transactionToPromise(transaction: IDBTransaction): Promise<void> {
+  return new Promise((resolve, reject) => {
+    transaction.addEventListener("complete", () => resolve());
+    transaction.addEventListener("abort", () => reject(transaction.error));
+    transaction.addEventListener("error", () => reject(transaction.error));
+  });
+}
+
+function openDatabase(): Promise<IDBDatabase> {
+  return new Promise((resolve, reject) => {
+    const request = indexedDB.open(DATABASE_NAME, DATABASE_VERSION);
+
+    request.addEventListener("upgradeneeded", () => {
+      const database = request.result;
+
+      if (!database.objectStoreNames.contains(ITEM_STORE_NAME)) {
+        const itemStore = database.createObjectStore(ITEM_STORE_NAME, {
+          keyPath: "id"
+        });
+        itemStore.createIndex("completed", "completed", { unique: false });
+        itemStore.createIndex("createdAt", "createdAt", { unique: false });
+        itemStore.createIndex("updatedAt", "updatedAt", { unique: false });
+      }
+
+    });
+
+    request.addEventListener("success", () => resolve(request.result));
+    request.addEventListener("error", () => reject(request.error));
+  });
+}
+
+async function readIndexedDbTodoItems(database: IDBDatabase): Promise<TodoItem[]> {
+  const transaction = database.transaction(ITEM_STORE_NAME, "readonly");
+  const items = await requestToPromise<TodoItem[]>(
+    transaction.objectStore(ITEM_STORE_NAME).getAll()
+  );
+
+  return normalizeTodoItems(items).sort((left, right) =>
+    right.createdAt.localeCompare(left.createdAt)
+  );
+}
+
+async function replaceIndexedDbTodoItems(
+  database: IDBDatabase,
+  items: readonly TodoItem[]
+): Promise<void> {
+  const transaction = database.transaction(ITEM_STORE_NAME, "readwrite");
+  const itemStore = transaction.objectStore(ITEM_STORE_NAME);
+  itemStore.clear();
+
+  normalizeTodoItems(items).forEach((item) => {
+    itemStore.put(item);
+  });
+
+  await transactionToPromise(transaction);
+}
+
 async function saveTodoItems(items: readonly TodoItem[]): Promise<void> {
-  if (hasChromeStorage()) {
-    await chrome.storage.local.set({ [TODO_STORAGE_KEY]: items });
-    return;
+  if (!hasIndexedDb()) {
+    throw new Error("INDEXED_DB_UNAVAILABLE");
   }
 
-  window.localStorage.setItem(TODO_STORAGE_KEY, JSON.stringify(items));
+  const database = await openDatabase();
+
+  try {
+    await replaceIndexedDbTodoItems(database, items);
+  } finally {
+    database.close();
+  }
 }
 
 export async function getTodoItems(): Promise<TodoItem[]> {
-  if (hasChromeStorage()) {
-    const result = await chrome.storage.local.get(TODO_STORAGE_KEY);
-    return normalizeTodoItems(result[TODO_STORAGE_KEY]);
-  }
-
-  const rawItems = window.localStorage.getItem(TODO_STORAGE_KEY);
-
-  if (!rawItems) {
+  if (!hasIndexedDb()) {
     return [];
   }
+
+  const database = await openDatabase();
 
   try {
-    return normalizeTodoItems(JSON.parse(rawItems));
-  } catch {
-    return [];
+    return await readIndexedDbTodoItems(database);
+  } finally {
+    database.close();
   }
 }
 

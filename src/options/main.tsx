@@ -1,6 +1,20 @@
-import { StrictMode, useEffect, useMemo, useState } from "react";
-import type { ChangeEvent } from "react";
+import { StrictMode, useEffect, useMemo, useRef, useState } from "react";
+import type { ChangeEvent, FormEvent } from "react";
 import { createRoot } from "react-dom/client";
+import {
+  askChromeLanguageModelStreaming,
+  initializeChromeLanguageModel,
+  isChromeLanguageModelInitialized,
+  prewarmChromeLanguageModel,
+  type LanguageModelInitializationUpdate
+} from "../shared/aiAssistant/chromeLanguageModel";
+import {
+  getAiAssistantConversations,
+  getSavedAiAssistantInitialized,
+  saveAiAssistantConversations,
+  saveAiAssistantInitialized,
+  type AiAssistantConversation
+} from "../shared/aiAssistant/storage";
 import { getDefaultLocale, getSavedLocale, type Locale } from "../shared/i18n/locale";
 import { messages } from "../shared/i18n/messages";
 import {
@@ -20,7 +34,39 @@ import {
 import manifest from "../../public/manifest.json";
 import "./styles.css";
 
+type AiAssistantMessage = {
+  readonly id: string;
+  readonly role: "user" | "assistant";
+  readonly content: string;
+};
+type AiAssistantInitializationStatus = "checking" | "needed" | "initializing" | "ready";
+const AI_ASSISTANT_TITLE_MAX_LENGTH = 24;
+
+function createClientId(prefix: string): string {
+  if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
+    return crypto.randomUUID();
+  }
+
+  return `${prefix}-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+}
+
+function createConversationTitle(prompt: string): string {
+  const normalizedPrompt = prompt.replace(/\s+/g, " ").trim();
+
+  if (!normalizedPrompt) {
+    return "新对话";
+  }
+
+  return normalizedPrompt.length > AI_ASSISTANT_TITLE_MAX_LENGTH
+    ? `${normalizedPrompt.slice(0, AI_ASSISTANT_TITLE_MAX_LENGTH)}...`
+    : normalizedPrompt;
+}
+
 function OptionsApp() {
+  const optionsTool =
+    new URLSearchParams(window.location.search).get("tool") === "aiAssistant"
+      ? "aiAssistant"
+      : "textCompare";
   const [locale, setLocale] = useState<Locale>(getDefaultLocale());
   const [leftText, setLeftText] = useState("");
   const [rightText, setRightText] = useState("");
@@ -28,9 +74,37 @@ function OptionsApp() {
   const [expandedDiffBlockKeys, setExpandedDiffBlockKeys] = useState<ReadonlySet<string>>(
     () => new Set()
   );
+  const [aiAssistantMessages, setAiAssistantMessages] = useState<AiAssistantMessage[]>([]);
+  const [aiAssistantConversations, setAiAssistantConversations] = useState<
+    AiAssistantConversation[]
+  >([]);
+  const [activeAiAssistantConversationId, setActiveAiAssistantConversationId] =
+    useState<string | null>(null);
+  const [aiAssistantInput, setAiAssistantInput] = useState("");
+  const [aiAssistantInitializationStatus, setAiAssistantInitializationStatus] =
+    useState<AiAssistantInitializationStatus>("checking");
+  const [aiAssistantInitializationDetail, setAiAssistantInitializationDetail] = useState("");
+  const [pendingAction, setPendingAction] = useState<"initializeAiAssistant" | "askAiAssistant" | null>(
+    null
+  );
+  const [message, setMessage] = useState("");
+  const aiChatListRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     void getSavedLocale().then(setLocale);
+    void getSavedAiAssistantInitialized().then((isInitialized) => {
+      setAiAssistantInitializationStatus(isInitialized ? "ready" : "needed");
+    });
+    void getAiAssistantConversations().then((conversations) => {
+      setAiAssistantConversations(conversations);
+
+      const [latestConversation] = conversations;
+
+      if (latestConversation) {
+        setActiveAiAssistantConversationId(latestConversation.id);
+        setAiAssistantMessages([...latestConversation.messages]);
+      }
+    });
     void getSavedTextCompareState().then((savedState) => {
       setLeftText(savedState.leftText);
       setRightText(savedState.rightText);
@@ -42,10 +116,249 @@ function OptionsApp() {
   }, []);
 
   const t = messages[locale];
+  const isAiAssistantReady = aiAssistantInitializationStatus === "ready";
   const diffBlocks = useMemo(
     () => (diffLines ? createTextDiffBlocks(diffLines) : []),
     [diffLines]
   );
+
+  useEffect(() => {
+    if (optionsTool !== "aiAssistant") {
+      return;
+    }
+
+    const chatList = aiChatListRef.current;
+
+    if (!chatList) {
+      return;
+    }
+
+    chatList.scrollTo({
+      top: chatList.scrollHeight,
+      behavior: "smooth"
+    });
+  }, [optionsTool, aiAssistantMessages]);
+
+  useEffect(() => {
+    if (
+      optionsTool !== "aiAssistant" ||
+      aiAssistantInitializationStatus !== "ready" ||
+      isChromeLanguageModelInitialized()
+    ) {
+      return;
+    }
+
+    void prewarmChromeLanguageModel();
+  }, [aiAssistantInitializationStatus, optionsTool]);
+
+  const getAiAssistantErrorMessage = (error: unknown): string => {
+    const errorMessage = error instanceof Error ? error.message : "";
+
+    if (errorMessage === "LANGUAGE_MODEL_TIMEOUT") {
+      return t.aiAssistantTimeout;
+    }
+
+    if (
+      errorMessage === "LANGUAGE_MODEL_UNSUPPORTED" ||
+      errorMessage === "LANGUAGE_MODEL_UNAVAILABLE"
+    ) {
+      return t.aiAssistantUnavailable;
+    }
+
+    return t.aiAssistantFailed;
+  };
+
+  const getAiAssistantInitializationDetail = (
+    update: LanguageModelInitializationUpdate
+  ): string => {
+    if (update.phase === "checking") {
+      return t.aiAssistantInitializationChecking;
+    }
+
+    if (update.phase === "creating") {
+      return t.aiAssistantInitializationCreating;
+    }
+
+    if (update.phase === "warming") {
+      return t.aiAssistantInitializationWarming;
+    }
+
+    if (update.phase === "downloading") {
+      return typeof update.downloadProgress === "number"
+        ? `${t.aiAssistantInitializationDownloading} ${Math.round(
+            update.downloadProgress * 100
+          )}%`
+        : t.aiAssistantInitializationDownloading;
+    }
+
+    return t.aiAssistantInitialized;
+  };
+
+  const handleInitializeAiAssistant = async () => {
+    if (pendingAction === "initializeAiAssistant") {
+      return;
+    }
+
+    setAiAssistantInitializationStatus("initializing");
+    setAiAssistantInitializationDetail(t.aiAssistantInitializationChecking);
+    setPendingAction("initializeAiAssistant");
+
+    try {
+      await initializeChromeLanguageModel((update) => {
+        setAiAssistantInitializationDetail(getAiAssistantInitializationDetail(update));
+      });
+      await saveAiAssistantInitialized(true);
+      setAiAssistantInitializationStatus("ready");
+      setAiAssistantInitializationDetail("");
+      setMessage(t.aiAssistantInitialized);
+    } catch (error) {
+      setAiAssistantInitializationStatus("needed");
+      setAiAssistantInitializationDetail("");
+      setMessage(getAiAssistantErrorMessage(error));
+    } finally {
+      setPendingAction(null);
+    }
+  };
+
+  const persistAiAssistantConversation = async (
+    conversation: AiAssistantConversation
+  ): Promise<void> => {
+    const nextConversations = await saveAiAssistantConversations([
+      conversation,
+      ...aiAssistantConversations.filter(
+        (savedConversation) => savedConversation.id !== conversation.id
+      )
+    ]);
+    setAiAssistantConversations(nextConversations);
+  };
+
+  const handleSelectAiAssistantConversation = (conversation: AiAssistantConversation) => {
+    setActiveAiAssistantConversationId(conversation.id);
+    setAiAssistantMessages([...conversation.messages]);
+    setAiAssistantInput("");
+    setMessage("");
+  };
+
+  const handleNewAiAssistantConversation = () => {
+    setActiveAiAssistantConversationId(null);
+    setAiAssistantMessages([]);
+    setAiAssistantInput("");
+    setMessage("");
+  };
+
+  const handleAskAiAssistant = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+
+    if (pendingAction === "askAiAssistant") {
+      return;
+    }
+
+    const prompt = aiAssistantInput.trim();
+
+    if (!prompt) {
+      return;
+    }
+
+    if (!isAiAssistantReady) {
+      setMessage(t.aiAssistantInitializeFirst);
+      return;
+    }
+
+    const userMessage: AiAssistantMessage = {
+      id: createClientId("ai-user"),
+      role: "user",
+      content: prompt
+    };
+    const assistantMessageId = createClientId("ai-assistant");
+    const pendingAssistantMessage: AiAssistantMessage = {
+      id: assistantMessageId,
+      role: "assistant",
+      content: t.aiAssistantGenerating
+    };
+    const currentConversation = aiAssistantConversations.find(
+      (conversation) => conversation.id === activeAiAssistantConversationId
+    );
+    const conversationId = currentConversation?.id ?? createClientId("ai-conversation");
+    const createdAt = currentConversation?.createdAt ?? new Date().toISOString();
+    const title = currentConversation?.title ?? createConversationTitle(prompt);
+
+    setAiAssistantMessages((currentMessages) => [
+      ...currentMessages,
+      userMessage,
+      pendingAssistantMessage
+    ]);
+    setActiveAiAssistantConversationId(conversationId);
+    setAiAssistantConversations((currentConversations) => [
+      {
+        id: conversationId,
+        title,
+        messages: [...aiAssistantMessages, userMessage, pendingAssistantMessage],
+        createdAt,
+        updatedAt: new Date().toISOString()
+      },
+      ...currentConversations.filter((conversation) => conversation.id !== conversationId)
+    ]);
+    setAiAssistantInput("");
+    setPendingAction("askAiAssistant");
+
+    try {
+      let nextAnswer = "";
+      await askChromeLanguageModelStreaming(prompt, (chunk) => {
+        nextAnswer += chunk;
+        setAiAssistantMessages((currentMessages) =>
+          currentMessages.map((chatMessage) =>
+            chatMessage.id === assistantMessageId
+              ? { ...chatMessage, content: nextAnswer }
+              : chatMessage
+          )
+        );
+      });
+      await persistAiAssistantConversation({
+        id: conversationId,
+        title,
+        messages: [
+          ...aiAssistantMessages,
+          userMessage,
+          {
+            id: assistantMessageId,
+            role: "assistant",
+            content: nextAnswer
+          }
+        ],
+        createdAt,
+        updatedAt: new Date().toISOString()
+      });
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : "";
+
+      setAiAssistantMessages((currentMessages) =>
+        currentMessages.filter((chatMessage) => chatMessage.id !== assistantMessageId)
+      );
+      await persistAiAssistantConversation({
+        id: conversationId,
+        title,
+        messages: [...aiAssistantMessages, userMessage],
+        createdAt,
+        updatedAt: new Date().toISOString()
+      });
+
+      if (
+        errorMessage === "LANGUAGE_MODEL_UNAVAILABLE" ||
+        errorMessage === "LANGUAGE_MODEL_UNSUPPORTED"
+      ) {
+        setAiAssistantInitializationStatus("needed");
+        void saveAiAssistantInitialized(false);
+      }
+
+      setMessage(getAiAssistantErrorMessage(error));
+    } finally {
+      setPendingAction(null);
+    }
+  };
+
+  const handleClearAiAssistant = () => {
+    handleNewAiAssistantConversation();
+  };
   const displayDiffBlocks = useMemo(
     () => createTextDiffDisplayBlocks(diffBlocks, expandedDiffBlockKeys),
     [diffBlocks, expandedDiffBlockKeys]
@@ -124,6 +437,144 @@ function OptionsApp() {
       return nextKeys;
     });
   };
+
+  if (optionsTool === "aiAssistant") {
+    return (
+      <main className="options-shell ai-options-shell">
+        {message ? <p className="options-toast" role="status">{message}</p> : null}
+        <header className="options-header">
+          <div>
+            <h1>{t.aiAssistant}</h1>
+            <p className="options-description">{t.aiAssistantGuide}</p>
+          </div>
+          <div className="header-actions">
+            <span className="version-badge">{t.version}: {manifest.version}</span>
+            <button
+              className="text-button"
+              disabled={aiAssistantMessages.length === 0 && !aiAssistantInput}
+              type="button"
+              onClick={handleClearAiAssistant}
+            >
+              {t.clear}
+            </button>
+          </div>
+        </header>
+
+        <section className="ai-options-panel" aria-label={t.aiAssistant}>
+          <aside className="ai-history-sidebar" aria-label={t.aiAssistantHistory}>
+            <div className="ai-history-header">
+              <h2>{t.aiAssistantHistory}</h2>
+              <button
+                className="text-button"
+                type="button"
+                onClick={handleNewAiAssistantConversation}
+              >
+                {t.aiAssistantNewConversation}
+              </button>
+            </div>
+            <div className="ai-history-list">
+              {aiAssistantConversations.length > 0 ? (
+                aiAssistantConversations.map((conversation) => (
+                  <button
+                    aria-current={
+                      conversation.id === activeAiAssistantConversationId ? "page" : undefined
+                    }
+                    className="ai-history-item"
+                    key={conversation.id}
+                    type="button"
+                    onClick={() => handleSelectAiAssistantConversation(conversation)}
+                  >
+                    <span>{conversation.title}</span>
+                    <time dateTime={conversation.updatedAt}>
+                      {new Date(conversation.updatedAt).toLocaleString(locale)}
+                    </time>
+                  </button>
+                ))
+              ) : (
+                <div className="empty-state">
+                  <p>{t.aiAssistantNoHistory}</p>
+                </div>
+              )}
+            </div>
+          </aside>
+
+          <div className="ai-options-main">
+            <div className="ai-options-chat-surface">
+              {!isAiAssistantReady ? (
+                <div className="ai-initialization-panel">
+                  <div className="ai-initialization-copy">
+                    <strong>{t.aiAssistantInitializeFirst}</strong>
+                    {aiAssistantInitializationDetail ? (
+                      <span>{aiAssistantInitializationDetail}</span>
+                    ) : null}
+                  </div>
+                  <button
+                    className="primary-action"
+                    disabled={
+                      aiAssistantInitializationStatus === "checking" ||
+                      pendingAction === "initializeAiAssistant"
+                    }
+                    type="button"
+                    onClick={handleInitializeAiAssistant}
+                  >
+                    {aiAssistantInitializationStatus === "initializing" ||
+                    pendingAction === "initializeAiAssistant"
+                      ? t.aiAssistantInitializing
+                      : t.aiAssistantInitialize}
+                  </button>
+                </div>
+              ) : null}
+
+              <div className="ai-options-chat-list" ref={aiChatListRef} role="log">
+                {aiAssistantMessages.length > 0 ? (
+                  aiAssistantMessages.map((chatMessage) => (
+                    <article
+                      className={`ai-chat-message ai-chat-message-${chatMessage.role}`}
+                      key={chatMessage.id}
+                    >
+                      <div className="ai-chat-role">
+                        {chatMessage.role === "user" ? t.aiAssistantUser : t.aiAssistant}
+                      </div>
+                      <div className="ai-chat-content">{chatMessage.content}</div>
+                    </article>
+                  ))
+                ) : (
+                  <div className="empty-state">
+                    <p>{t.aiAssistantEmpty}</p>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            <form className="ai-options-composer" onSubmit={handleAskAiAssistant}>
+              <textarea
+                aria-label={t.aiAssistantPrompt}
+                placeholder={t.aiAssistantPromptPlaceholder}
+                disabled={!isAiAssistantReady || pendingAction === "askAiAssistant"}
+                value={aiAssistantInput}
+                onChange={(event) => setAiAssistantInput(event.target.value)}
+              />
+              <div className="ai-options-composer-footer">
+                <span>{t.aiAssistantFullscreenHint}</span>
+                <button
+                  className="primary-action"
+                  disabled={
+                    !isAiAssistantReady ||
+                    pendingAction === "initializeAiAssistant" ||
+                    pendingAction === "askAiAssistant" ||
+                    !aiAssistantInput.trim()
+                  }
+                  type="submit"
+                >
+                  {pendingAction === "askAiAssistant" ? t.aiAssistantThinking : t.send}
+                </button>
+              </div>
+            </form>
+          </div>
+        </section>
+      </main>
+    );
+  }
 
   return (
     <main className={`options-shell${diffLines ? " has-diff" : ""}`}>

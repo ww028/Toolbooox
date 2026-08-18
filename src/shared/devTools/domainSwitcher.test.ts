@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { IDBFactory } from "fake-indexeddb";
 import {
   buildSwitchedDomainUrl,
   deleteDomainSwitcherRule,
@@ -6,32 +7,20 @@ import {
   saveDomainSwitcherRule
 } from "./domainSwitcher";
 
-const storageKey = "toolbooox.devTools.domainSwitcher";
+const keyValueDatabaseName = "toolbooox.keyValue";
 
-type StoredValue = Record<string, unknown>;
-
-function createChromeMock(storage: StoredValue) {
-  return {
-    storage: {
-      local: {
-        get: vi.fn(async (key: string) => ({
-          [key]: storage[key]
-        })),
-        set: vi.fn(async (value: StoredValue) => {
-          Object.assign(storage, value);
-        })
-      }
-    }
-  };
+function requestToPromise<T>(request: IDBRequest<T>): Promise<T> {
+  return new Promise((resolve, reject) => {
+    request.addEventListener("success", () => resolve(request.result));
+    request.addEventListener("error", () => reject(request.error));
+  });
 }
 
 describe("domainSwitcher", () => {
-  let chromeStorage: StoredValue;
-
-  beforeEach(() => {
+  beforeEach(async () => {
     vi.restoreAllMocks();
-    chromeStorage = {};
-    vi.stubGlobal("chrome", createChromeMock(chromeStorage));
+    vi.stubGlobal("indexedDB", new IDBFactory());
+    await requestToPromise(indexedDB.deleteDatabase(keyValueDatabaseName));
   });
 
   it("switches from online domain to local development domain", () => {
@@ -88,22 +77,6 @@ describe("domainSwitcher", () => {
     ).toBeNull();
   });
 
-  it("reads legacy single-pair config as a saved rule", async () => {
-    chromeStorage[storageKey] = {
-      onlineDomain: "www.example.test",
-      localDomain: "localhost:5173"
-    };
-
-    const rules = await getDomainSwitcherRules();
-
-    expect(rules).toHaveLength(1);
-    expect(rules[0]).toMatchObject({
-      onlineDomain: "www.example.test",
-      localDomain: "localhost:5173"
-    });
-    expect(typeof rules[0]?.id).toBe("string");
-  });
-
   it("creates and updates saved domain rules", async () => {
     const created = await saveDomainSwitcherRule(
       [],
@@ -128,7 +101,7 @@ describe("domainSwitcher", () => {
       onlineDomain: "admin.example.test",
       localDomain: "localhost:3000"
     });
-    expect(chromeStorage[storageKey]).toEqual(updated.rules);
+    expect(await getDomainSwitcherRules()).toEqual(updated.rules);
   });
 
   it("deletes saved domain rules", async () => {
@@ -144,6 +117,6 @@ describe("domainSwitcher", () => {
     const nextRules = await deleteDomainSwitcherRule(created.rules, created.savedRule.id);
 
     expect(nextRules).toEqual([]);
-    expect(chromeStorage[storageKey]).toEqual([]);
+    expect(await getDomainSwitcherRules()).toEqual([]);
   });
 });

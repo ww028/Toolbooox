@@ -23,6 +23,17 @@ import {
   type AddressNavigationItem
 } from "../shared/addressNavigation/storage";
 import {
+  askChromeLanguageModelStreaming,
+  initializeChromeLanguageModel,
+  isChromeLanguageModelInitialized,
+  prewarmChromeLanguageModel,
+  type LanguageModelInitializationUpdate
+} from "../shared/aiAssistant/chromeLanguageModel";
+import {
+  getSavedAiAssistantInitialized,
+  saveAiAssistantInitialized
+} from "../shared/aiAssistant/storage";
+import {
   evaluateCalculatorExpression,
   formatCalculatorChineseDescription,
   formatCalculatorResult,
@@ -45,6 +56,10 @@ import {
 } from "../shared/devTools/domainSwitcher";
 import { getDefaultLocale, getSavedLocale, saveLocale, type Locale } from "../shared/i18n/locale";
 import { messages } from "../shared/i18n/messages";
+import {
+  getIndexedDbValue,
+  setIndexedDbValue
+} from "../shared/storage/indexedDbKeyValue";
 import {
   createPasswordVaultExport,
   deletePasswordEntry,
@@ -71,6 +86,12 @@ import {
   getSavedTextCompareState,
   saveTextCompareState
 } from "../shared/textCompare/storage";
+import {
+  TRANSLATION_LANGUAGE_OPTIONS,
+  prewarmChromeTranslator,
+  translateWithChromeTranslator,
+  type TranslationLanguageCode
+} from "../shared/translation/chromeTranslator";
 import { CLOSE_SIDE_PANEL_MESSAGE_TYPE } from "../shared/sidePanel/messages";
 import {
   deleteTodoItem,
@@ -95,6 +116,8 @@ const PRIMARY_TOOL_KEYS = [
   "domainSwitcher",
   "cookieViewer",
   "textCompare",
+  "languageTranslation",
+  "aiAssistant",
   "calculator",
   "addressNavigator",
   "todoItems"
@@ -116,8 +139,18 @@ type PendingAction =
   | "switchDomain"
   | "saveCookieRequestUrl"
   | "saveAddressNavigation"
+  | "translateText"
+  | "initializeAiAssistant"
+  | "askAiAssistant"
   | "saveTodo"
   | null;
+
+type AiAssistantMessage = {
+  readonly id: string;
+  readonly role: "user" | "assistant";
+  readonly content: string;
+};
+type AiAssistantInitializationStatus = "checking" | "needed" | "initializing" | "ready";
 
 const emptyForm: FormState = {
   displayName: "",
@@ -145,22 +178,21 @@ const emptyAddressNavigationDraft: AddressNavigationDraft = {
 const PASSWORD_PAGE_SIZE = 10;
 const ACTIVE_TOOL_STORAGE_KEY = "toolbooox.activeTool";
 const MENU_SETTINGS_STORAGE_KEY = "toolbooox.menuSettings";
+const TRANSLATION_LANGUAGE_SETTINGS_STORAGE_KEY = "toolbooox.translationLanguages";
 const LONG_TEXT_COMPARE_LINE_THRESHOLD = 10;
 const DEFAULT_LOCAL_DOMAIN = "localhost:";
 const defaultMenuSettings: MenuSettings = {
   order: [...PRIMARY_TOOL_KEYS],
   hidden: []
 };
-function hasChromeStorage(): boolean {
-  return typeof chrome !== "undefined" && Boolean(chrome.storage?.local);
-}
-
 function isToolKey(value: unknown): value is ToolKey {
   return (
     value === "passwordManager" ||
     value === "domainSwitcher" ||
     value === "cookieViewer" ||
     value === "textCompare" ||
+    value === "languageTranslation" ||
+    value === "aiAssistant" ||
     value === "calculator" ||
     value === "addressNavigator" ||
     value === "todoItems" ||
@@ -180,23 +212,58 @@ function normalizeSavedToolKey(value: unknown): ToolKey {
   return isToolKey(value) ? value : "passwordManager";
 }
 
-async function getSavedActiveTool(): Promise<ToolKey> {
-  if (hasChromeStorage()) {
-    const result = await chrome.storage.local.get(ACTIVE_TOOL_STORAGE_KEY);
-    return normalizeSavedToolKey(result[ACTIVE_TOOL_STORAGE_KEY]);
+function isTranslationLanguageCode(value: unknown): value is TranslationLanguageCode {
+  return TRANSLATION_LANGUAGE_OPTIONS.some((languageOption) => languageOption.code === value);
+}
+
+function normalizeTranslationLanguages(value: unknown): {
+  readonly sourceLanguage: TranslationLanguageCode;
+  readonly targetLanguage: TranslationLanguageCode;
+} {
+  if (!value || typeof value !== "object") {
+    return {
+      sourceLanguage: "en",
+      targetLanguage: "zh-Hans"
+    };
   }
 
-  const activeTool = window.localStorage.getItem(ACTIVE_TOOL_STORAGE_KEY);
-  return normalizeSavedToolKey(activeTool);
+  const settings = value as {
+    readonly sourceLanguage?: unknown;
+    readonly targetLanguage?: unknown;
+  };
+
+  return {
+    sourceLanguage: isTranslationLanguageCode(settings.sourceLanguage)
+      ? settings.sourceLanguage
+      : "en",
+    targetLanguage: isTranslationLanguageCode(settings.targetLanguage)
+      ? settings.targetLanguage
+      : "zh-Hans"
+  };
+}
+
+async function getSavedActiveTool(): Promise<ToolKey> {
+  return normalizeSavedToolKey(await getIndexedDbValue(ACTIVE_TOOL_STORAGE_KEY));
 }
 
 async function saveActiveTool(toolKey: ToolKey): Promise<void> {
-  if (hasChromeStorage()) {
-    await chrome.storage.local.set({ [ACTIVE_TOOL_STORAGE_KEY]: toolKey });
-    return;
-  }
+  await setIndexedDbValue(ACTIVE_TOOL_STORAGE_KEY, toolKey);
+}
 
-  window.localStorage.setItem(ACTIVE_TOOL_STORAGE_KEY, toolKey);
+async function getSavedTranslationLanguages(): Promise<{
+  readonly sourceLanguage: TranslationLanguageCode;
+  readonly targetLanguage: TranslationLanguageCode;
+}> {
+  return normalizeTranslationLanguages(
+    await getIndexedDbValue(TRANSLATION_LANGUAGE_SETTINGS_STORAGE_KEY)
+  );
+}
+
+async function saveTranslationLanguages(settings: {
+  readonly sourceLanguage: TranslationLanguageCode;
+  readonly targetLanguage: TranslationLanguageCode;
+}): Promise<void> {
+  await setIndexedDbValue(TRANSLATION_LANGUAGE_SETTINGS_STORAGE_KEY, settings);
 }
 
 function normalizeMenuSettings(value: unknown): MenuSettings {
@@ -223,31 +290,11 @@ function normalizeMenuSettings(value: unknown): MenuSettings {
 }
 
 async function getSavedMenuSettings(): Promise<MenuSettings> {
-  if (hasChromeStorage()) {
-    const result = await chrome.storage.local.get(MENU_SETTINGS_STORAGE_KEY);
-    return normalizeMenuSettings(result[MENU_SETTINGS_STORAGE_KEY]);
-  }
-
-  const rawSettings = window.localStorage.getItem(MENU_SETTINGS_STORAGE_KEY);
-
-  if (!rawSettings) {
-    return defaultMenuSettings;
-  }
-
-  try {
-    return normalizeMenuSettings(JSON.parse(rawSettings));
-  } catch {
-    return defaultMenuSettings;
-  }
+  return normalizeMenuSettings(await getIndexedDbValue(MENU_SETTINGS_STORAGE_KEY));
 }
 
 async function saveMenuSettings(settings: MenuSettings): Promise<void> {
-  if (hasChromeStorage()) {
-    await chrome.storage.local.set({ [MENU_SETTINGS_STORAGE_KEY]: settings });
-    return;
-  }
-
-  window.localStorage.setItem(MENU_SETTINGS_STORAGE_KEY, JSON.stringify(settings));
+  await setIndexedDbValue(MENU_SETTINGS_STORAGE_KEY, settings);
 }
 
 function toDraft(formState: FormState): PasswordEntryDraft {
@@ -371,6 +418,33 @@ function requestSidePanelClose(): void {
   }
 }
 
+function createClientId(prefix: string): string {
+  if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
+    return crypto.randomUUID();
+  }
+
+  return `${prefix}-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+}
+
+function scheduleIdleTask(task: () => void): () => void {
+  const idleWindow = window as Window & {
+    requestIdleCallback?: (callback: () => void, options?: { timeout: number }) => number;
+    cancelIdleCallback?: (handle: number) => void;
+  };
+
+  if (typeof idleWindow.requestIdleCallback === "function") {
+    const idleId = idleWindow.requestIdleCallback(task, { timeout: 800 });
+    return () => {
+      idleWindow.cancelIdleCallback?.(idleId);
+    };
+  }
+
+  const timerId = window.setTimeout(task, 250);
+  return () => {
+    window.clearTimeout(timerId);
+  };
+}
+
 function PopupApp() {
   const [locale, setLocale] = useState<Locale>(getDefaultLocale());
   const [activeTool, setActiveTool] = useState<ToolKey>("passwordManager");
@@ -391,6 +465,17 @@ function PopupApp() {
   const [leftCompareText, setLeftCompareText] = useState("");
   const [rightCompareText, setRightCompareText] = useState("");
   const [textDiffLines, setTextDiffLines] = useState<TextDiffLine[] | null>(null);
+  const [translationSourceLanguage, setTranslationSourceLanguage] =
+    useState<TranslationLanguageCode>("en");
+  const [translationTargetLanguage, setTranslationTargetLanguage] =
+    useState<TranslationLanguageCode>("zh-Hans");
+  const [translationSourceText, setTranslationSourceText] = useState("");
+  const [translationResult, setTranslationResult] = useState("");
+  const [aiAssistantMessages, setAiAssistantMessages] = useState<AiAssistantMessage[]>([]);
+  const [aiAssistantInput, setAiAssistantInput] = useState("");
+  const [aiAssistantInitializationStatus, setAiAssistantInitializationStatus] =
+    useState<AiAssistantInitializationStatus>("checking");
+  const [aiAssistantInitializationDetail, setAiAssistantInitializationDetail] = useState("");
   const [calculatorExpression, setCalculatorExpression] = useState("");
   const [calculatorResult, setCalculatorResult] = useState("");
   const [calculatorResultDescription, setCalculatorResultDescription] = useState("");
@@ -409,13 +494,22 @@ function PopupApp() {
   const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null);
   const formRef = useRef<HTMLFormElement | null>(null);
   const featureMainRef = useRef<HTMLElement | null>(null);
+  const aiChatListRef = useRef<HTMLDivElement | null>(null);
   const t = messages[locale];
   const isActionPending = pendingAction !== null || pendingDeleteId !== null;
+  const isAiAssistantReady = aiAssistantInitializationStatus === "ready";
 
   useEffect(() => {
     requestSidePanelClose();
     void getSavedLocale().then(setLocale);
     void getSavedActiveTool().then(setActiveTool);
+    void getSavedTranslationLanguages().then((savedLanguages) => {
+      setTranslationSourceLanguage(savedLanguages.sourceLanguage);
+      setTranslationTargetLanguage(savedLanguages.targetLanguage);
+    });
+    void getSavedAiAssistantInitialized().then((isInitialized) => {
+      setAiAssistantInitializationStatus(isInitialized ? "ready" : "needed");
+    });
     void getSavedMenuSettings().then(setMenuSettings);
     void getSavedTextCompareState().then((savedState) => {
       setLeftCompareText(savedState.leftText);
@@ -531,6 +625,53 @@ function PopupApp() {
       window.clearInterval(timerId);
     };
   }, [activeHostname, activeTool, cookieRequestUrl]);
+
+  useEffect(() => {
+    if (
+      activeTool !== "languageTranslation" ||
+      translationSourceLanguage === translationTargetLanguage
+    ) {
+      return;
+    }
+
+    return scheduleIdleTask(() => {
+      void prewarmChromeTranslator({
+        sourceLanguage: translationSourceLanguage,
+        targetLanguage: translationTargetLanguage
+      });
+    });
+  }, [activeTool, translationSourceLanguage, translationTargetLanguage]);
+
+  useEffect(() => {
+    if (
+      activeTool !== "aiAssistant" ||
+      aiAssistantInitializationStatus !== "ready" ||
+      isChromeLanguageModelInitialized()
+    ) {
+      return;
+    }
+
+    return scheduleIdleTask(() => {
+      void prewarmChromeLanguageModel();
+    });
+  }, [activeTool, aiAssistantInitializationStatus]);
+
+  useEffect(() => {
+    if (activeTool !== "aiAssistant") {
+      return;
+    }
+
+    const chatList = aiChatListRef.current;
+
+    if (!chatList) {
+      return;
+    }
+
+    chatList.scrollTo({
+      top: chatList.scrollHeight,
+      behavior: "smooth"
+    });
+  }, [activeTool, aiAssistantMessages]);
 
   const matchedEntries = useMemo(
     () =>
@@ -676,6 +817,227 @@ function PopupApp() {
       rightText: nextRightText,
       hasCompared: true
     });
+  };
+
+  const handleTranslationSourceLanguageChange = (event: ChangeEvent<HTMLSelectElement>) => {
+    const nextSourceLanguage = event.target.value as TranslationLanguageCode;
+
+    setTranslationSourceLanguage(nextSourceLanguage);
+    setTranslationResult("");
+    void saveTranslationLanguages({
+      sourceLanguage: nextSourceLanguage,
+      targetLanguage: translationTargetLanguage
+    });
+  };
+
+  const handleTranslationTargetLanguageChange = (event: ChangeEvent<HTMLSelectElement>) => {
+    const nextTargetLanguage = event.target.value as TranslationLanguageCode;
+
+    setTranslationTargetLanguage(nextTargetLanguage);
+    setTranslationResult("");
+    void saveTranslationLanguages({
+      sourceLanguage: translationSourceLanguage,
+      targetLanguage: nextTargetLanguage
+    });
+  };
+
+  const handleTranslationSourceTextChange = (event: ChangeEvent<HTMLTextAreaElement>) => {
+    setTranslationSourceText(event.target.value);
+    setTranslationResult("");
+  };
+
+  const handleSwapTranslationLanguages = () => {
+    const nextSourceLanguage = translationTargetLanguage;
+    const nextTargetLanguage = translationSourceLanguage;
+
+    setTranslationSourceLanguage(nextSourceLanguage);
+    setTranslationTargetLanguage(nextTargetLanguage);
+    setTranslationResult("");
+    void saveTranslationLanguages({
+      sourceLanguage: nextSourceLanguage,
+      targetLanguage: nextTargetLanguage
+    });
+  };
+
+  const handleTranslateText = async () => {
+    if (!translationSourceText.trim()) {
+      setTranslationResult("");
+      return;
+    }
+
+    if (translationSourceLanguage === translationTargetLanguage) {
+      setMessage(t.translationSameLanguage);
+      return;
+    }
+
+    setPendingAction("translateText");
+
+    try {
+      const translatedText = await translateWithChromeTranslator({
+        sourceLanguage: translationSourceLanguage,
+        targetLanguage: translationTargetLanguage,
+        text: translationSourceText
+      });
+      setTranslationResult(translatedText);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "";
+      setMessage(
+        message === "TRANSLATOR_UNSUPPORTED" || message === "TRANSLATOR_UNAVAILABLE"
+          ? t.translationUnavailable
+          : t.translationFailed
+      );
+    } finally {
+      setPendingAction(null);
+    }
+  };
+
+  const handleAiAssistantInputChange = (event: ChangeEvent<HTMLTextAreaElement>) => {
+    setAiAssistantInput(event.target.value);
+  };
+
+  const getAiAssistantErrorMessage = (error: unknown): string => {
+    const message = error instanceof Error ? error.message : "";
+
+    if (message === "LANGUAGE_MODEL_TIMEOUT") {
+      return t.aiAssistantTimeout;
+    }
+
+    if (message === "LANGUAGE_MODEL_UNSUPPORTED" || message === "LANGUAGE_MODEL_UNAVAILABLE") {
+      return t.aiAssistantUnavailable;
+    }
+
+    return t.aiAssistantFailed;
+  };
+
+  const getAiAssistantInitializationDetail = (
+    update: LanguageModelInitializationUpdate
+  ): string => {
+    if (update.phase === "checking") {
+      return t.aiAssistantInitializationChecking;
+    }
+
+    if (update.phase === "creating") {
+      return t.aiAssistantInitializationCreating;
+    }
+
+    if (update.phase === "warming") {
+      return t.aiAssistantInitializationWarming;
+    }
+
+    if (update.phase === "downloading") {
+      if (typeof update.downloadProgress === "number") {
+        return `${t.aiAssistantInitializationDownloading} ${Math.round(
+          update.downloadProgress * 100
+        )}%`;
+      }
+
+      return t.aiAssistantInitializationDownloading;
+    }
+
+    return t.aiAssistantInitialized;
+  };
+
+  const handleInitializeAiAssistant = async () => {
+    if (pendingAction === "initializeAiAssistant") {
+      return;
+    }
+
+    setAiAssistantInitializationStatus("initializing");
+    setAiAssistantInitializationDetail(t.aiAssistantInitializationChecking);
+    setPendingAction("initializeAiAssistant");
+
+    try {
+      await initializeChromeLanguageModel((update) => {
+        setAiAssistantInitializationDetail(getAiAssistantInitializationDetail(update));
+      });
+      await saveAiAssistantInitialized(true);
+      setAiAssistantInitializationStatus("ready");
+      setAiAssistantInitializationDetail("");
+      setMessage(t.aiAssistantInitialized);
+    } catch (error) {
+      setAiAssistantInitializationStatus("needed");
+      setAiAssistantInitializationDetail("");
+      setMessage(getAiAssistantErrorMessage(error));
+    } finally {
+      setPendingAction(null);
+    }
+  };
+
+  const handleAskAiAssistant = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+
+    if (pendingAction === "askAiAssistant") {
+      return;
+    }
+
+    const prompt = aiAssistantInput.trim();
+
+    if (!prompt) {
+      return;
+    }
+
+    if (!isAiAssistantReady) {
+      setMessage(t.aiAssistantInitializeFirst);
+      return;
+    }
+
+    const userMessage: AiAssistantMessage = {
+      id: createClientId("ai-user"),
+      role: "user",
+      content: prompt
+    };
+    const assistantMessageId = createClientId("ai-assistant");
+    const pendingAssistantMessage: AiAssistantMessage = {
+      id: assistantMessageId,
+      role: "assistant",
+      content: t.aiAssistantGenerating
+    };
+
+    setAiAssistantMessages((currentMessages) => [
+      ...currentMessages,
+      userMessage,
+      pendingAssistantMessage
+    ]);
+    setAiAssistantInput("");
+    setPendingAction("askAiAssistant");
+
+    try {
+      let nextAnswer = "";
+      await askChromeLanguageModelStreaming(prompt, (chunk) => {
+        nextAnswer += chunk;
+        setAiAssistantMessages((currentMessages) =>
+          currentMessages.map((chatMessage) =>
+            chatMessage.id === assistantMessageId
+              ? {
+                  ...chatMessage,
+                  content: nextAnswer
+                }
+              : chatMessage
+          )
+        );
+      });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "";
+
+      setAiAssistantMessages((currentMessages) =>
+        currentMessages.filter((chatMessage) => chatMessage.id !== assistantMessageId)
+      );
+
+      if (message === "LANGUAGE_MODEL_UNAVAILABLE" || message === "LANGUAGE_MODEL_UNSUPPORTED") {
+        setAiAssistantInitializationStatus("needed");
+        void saveAiAssistantInitialized(false);
+      }
+
+      setMessage(getAiAssistantErrorMessage(error));
+    } finally {
+      setPendingAction(null);
+    }
+  };
+
+  const handleClearAiAssistant = () => {
+    setAiAssistantMessages([]);
+    setAiAssistantInput("");
+    setMessage("");
   };
 
   const handleAddressNavigationDraftChange =
@@ -1109,6 +1471,15 @@ function PopupApp() {
     window.open(optionsUrl, "_blank", "noopener,noreferrer");
   };
 
+  const handleOpenAiAssistantFullscreen = () => {
+    const optionsUrl =
+      typeof chrome !== "undefined" && chrome.runtime?.getURL
+        ? chrome.runtime.getURL("options.html?tool=aiAssistant")
+        : "/options.html?tool=aiAssistant";
+
+    window.open(optionsUrl, "_blank", "noopener,noreferrer");
+  };
+
   const handleOpenSidePanelDemo = async (
     shouldClosePopup = false,
     sidePanelToolKey: SidePanelToolKey = "todoItems"
@@ -1152,6 +1523,10 @@ function PopupApp() {
         return t.cookieViewer;
       case "textCompare":
         return t.textCompare;
+      case "languageTranslation":
+        return t.languageTranslation;
+      case "aiAssistant":
+        return t.aiAssistant;
       case "calculator":
         return t.calculator;
       case "addressNavigator":
@@ -1560,7 +1935,10 @@ function PopupApp() {
           </button>
         </aside>
 
-        <main className="feature-main" ref={featureMainRef}>
+        <main
+          className={`feature-main${activeTool === "aiAssistant" ? " feature-main-ai" : ""}`}
+          ref={featureMainRef}
+        >
           {message ? <p className="toast" role="status">{message}</p> : null}
 
           {activeTool === "passwordManager" ? (
@@ -2404,6 +2782,188 @@ function PopupApp() {
                   <p>{t.textCompareEmpty}</p>
                 </div>
               )}
+            </section>
+          </section>
+          ) : activeTool === "languageTranslation" ? (
+          <section className="feature-panel" aria-label={t.languageTranslation}>
+            <div className="feature-header">
+              <div>
+                <h2>{t.languageTranslation}</h2>
+              </div>
+            </div>
+
+            <section className="developer-form" aria-label={t.languageTranslation}>
+              <div className="translation-language-grid">
+                <label>
+                  {t.sourceLanguage}
+                  <select
+                    value={translationSourceLanguage}
+                    onChange={handleTranslationSourceLanguageChange}
+                  >
+                    {TRANSLATION_LANGUAGE_OPTIONS.map((languageOption) => (
+                      <option key={languageOption.code} value={languageOption.code}>
+                        {languageOption.label}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <button
+                  aria-label={t.swapLanguages}
+                  className="translation-swap-button"
+                  title={t.swapLanguages}
+                  type="button"
+                  onClick={handleSwapTranslationLanguages}
+                >
+                  ⇄
+                </button>
+                <label>
+                  {t.targetLanguage}
+                  <select
+                    value={translationTargetLanguage}
+                    onChange={handleTranslationTargetLanguageChange}
+                  >
+                    {TRANSLATION_LANGUAGE_OPTIONS.map((languageOption) => (
+                      <option key={languageOption.code} value={languageOption.code}>
+                        {languageOption.label}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              </div>
+              <div className="translation-grid">
+                <label className="translation-field">
+                  {t.textToTranslate}
+                  <textarea
+                    placeholder={t.textToTranslatePlaceholder}
+                    value={translationSourceText}
+                    onChange={handleTranslationSourceTextChange}
+                  />
+                </label>
+                <label className="translation-field">
+                  {t.translatedText}
+                  <textarea readOnly value={translationResult} />
+                </label>
+              </div>
+              <div className="developer-form-actions">
+                <button
+                  className="primary-button"
+                  disabled={pendingAction === "translateText"}
+                  type="button"
+                  onClick={handleTranslateText}
+                >
+                  {pendingAction === "translateText" ? t.translating : t.translate}
+                </button>
+                <button
+                  className="text-button"
+                  disabled={!translationResult}
+                  type="button"
+                  onClick={() => handleCopy(translationResult, t.translationCopied)}
+                >
+                  {t.copy}
+                </button>
+              </div>
+            </section>
+          </section>
+          ) : activeTool === "aiAssistant" ? (
+          <section className="feature-panel" aria-label={t.aiAssistant}>
+            <div className="feature-header">
+              <div>
+                <h2>{t.aiAssistant}</h2>
+                <p className="ai-assistant-guide">{t.aiAssistantGuide}</p>
+              </div>
+              <div className="feature-actions">
+                <span className="ai-fullscreen-hint">{t.aiAssistantFullscreenHint}</span>
+                <button
+                  className="text-button"
+                  title={t.aiAssistantFullscreenHint}
+                  type="button"
+                  onClick={handleOpenAiAssistantFullscreen}
+                >
+                  {t.aiAssistantFullscreen}
+                </button>
+                <button
+                  className="text-button"
+                  disabled={aiAssistantMessages.length === 0 && !aiAssistantInput}
+                  type="button"
+                  onClick={handleClearAiAssistant}
+                >
+                  {t.clear}
+                </button>
+              </div>
+            </div>
+
+            <section className="ai-assistant-panel" aria-label={t.aiAssistant}>
+              <div className="developer-form ai-chat-surface">
+                {!isAiAssistantReady ? (
+                  <div className="ai-initialization-panel">
+                    <div className="ai-initialization-copy">
+                      <strong>{t.aiAssistantInitializeFirst}</strong>
+                      {aiAssistantInitializationDetail ? (
+                        <span>{aiAssistantInitializationDetail}</span>
+                      ) : null}
+                    </div>
+                    <button
+                      className="primary-button"
+                      disabled={
+                        aiAssistantInitializationStatus === "checking" ||
+                        pendingAction === "initializeAiAssistant"
+                      }
+                      type="button"
+                      onClick={handleInitializeAiAssistant}
+                    >
+                      {aiAssistantInitializationStatus === "initializing" ||
+                      pendingAction === "initializeAiAssistant"
+                        ? t.aiAssistantInitializing
+                        : t.aiAssistantInitialize}
+                    </button>
+                  </div>
+                ) : null}
+
+                <div className="ai-chat-list" ref={aiChatListRef} role="log">
+                  {aiAssistantMessages.length > 0 ? (
+                    aiAssistantMessages.map((chatMessage) => (
+                      <article
+                        className={`ai-chat-message ai-chat-message-${chatMessage.role}`}
+                        key={chatMessage.id}
+                      >
+                        <div className="ai-chat-role">
+                          {chatMessage.role === "user" ? t.aiAssistantUser : t.aiAssistant}
+                        </div>
+                        <div className="ai-chat-content">{chatMessage.content}</div>
+                      </article>
+                    ))
+                  ) : (
+                    <div className="empty-state">
+                      <p>{t.aiAssistantEmpty}</p>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              <form className="ai-chat-form" onSubmit={handleAskAiAssistant}>
+                <textarea
+                  aria-label={t.aiAssistantPrompt}
+                  placeholder={t.aiAssistantPromptPlaceholder}
+                  disabled={!isAiAssistantReady || pendingAction === "askAiAssistant"}
+                  value={aiAssistantInput}
+                  onChange={handleAiAssistantInputChange}
+                />
+                <div className="ai-chat-form-footer">
+                  <span>{t.aiAssistantPrompt}</span>
+                  <button
+                    className="primary-button"
+                    disabled={
+                      !isAiAssistantReady ||
+                      pendingAction === "initializeAiAssistant" ||
+                      pendingAction === "askAiAssistant" ||
+                      !aiAssistantInput.trim()
+                    }
+                    type="submit"
+                  >
+                    {pendingAction === "askAiAssistant" ? t.aiAssistantThinking : t.send}
+                  </button>
+                </div>
+              </form>
             </section>
           </section>
           ) : activeTool === "settings" ? (

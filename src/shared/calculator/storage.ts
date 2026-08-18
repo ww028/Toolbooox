@@ -1,3 +1,8 @@
+import {
+  getIndexedDbValue,
+  setIndexedDbValue
+} from "../storage/indexedDbKeyValue";
+
 export type CalculatorHistoryItem = {
   readonly id: string;
   readonly expression: string;
@@ -21,10 +26,6 @@ const emptyCalculatorState: CalculatorState = {
   resultDescription: "",
   history: []
 };
-
-function hasChromeStorage(): boolean {
-  return typeof chrome !== "undefined" && Boolean(chrome.storage?.local);
-}
 
 function isCalculatorHistoryItem(value: unknown): value is CalculatorHistoryItem {
   if (!value || typeof value !== "object") {
@@ -83,22 +84,7 @@ function normalizeCalculatorState(value: unknown): CalculatorState {
 }
 
 export async function getSavedCalculatorState(): Promise<CalculatorState> {
-  if (hasChromeStorage()) {
-    const result = await chrome.storage.local.get(CALCULATOR_STATE_STORAGE_KEY);
-    return normalizeCalculatorState(result[CALCULATOR_STATE_STORAGE_KEY]);
-  }
-
-  const rawState = window.localStorage.getItem(CALCULATOR_STATE_STORAGE_KEY);
-
-  if (!rawState) {
-    return emptyCalculatorState;
-  }
-
-  try {
-    return normalizeCalculatorState(JSON.parse(rawState));
-  } catch {
-    return emptyCalculatorState;
-  }
+  return normalizeCalculatorState(await getIndexedDbValue(CALCULATOR_STATE_STORAGE_KEY));
 }
 
 export async function saveCalculatorState(state: Partial<CalculatorState>): Promise<CalculatorState> {
@@ -108,12 +94,7 @@ export async function saveCalculatorState(state: Partial<CalculatorState>): Prom
     ...state
   });
 
-  if (hasChromeStorage()) {
-    await chrome.storage.local.set({ [CALCULATOR_STATE_STORAGE_KEY]: nextState });
-    return nextState;
-  }
-
-  window.localStorage.setItem(CALCULATOR_STATE_STORAGE_KEY, JSON.stringify(nextState));
+  await setIndexedDbValue(CALCULATOR_STATE_STORAGE_KEY, nextState);
   return nextState;
 }
 

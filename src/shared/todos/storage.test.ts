@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { IDBFactory } from "fake-indexeddb";
 import {
   deleteTodoItem,
   getTodoItems,
@@ -6,35 +7,34 @@ import {
   updateTodoCompleted
 } from "./storage";
 
-const storageKey = "toolbooox.todos.items";
+const databaseName = "toolbooox.todos";
 
-type StoredValue = Record<string, unknown>;
+function requestToPromise<T>(request: IDBRequest<T>): Promise<T> {
+  return new Promise((resolve, reject) => {
+    request.addEventListener("success", () => resolve(request.result));
+    request.addEventListener("error", () => reject(request.error));
+  });
+}
 
-function createChromeMock(storage: StoredValue) {
-  return {
-    storage: {
-      local: {
-        get: vi.fn(async (key: string) => ({
-          [key]: storage[key]
-        })),
-        set: vi.fn(async (value: StoredValue) => {
-          Object.assign(storage, value);
-        })
-      }
-    }
-  };
+async function readRawItems(): Promise<Array<Record<string, unknown>>> {
+  const database = await requestToPromise(indexedDB.open(databaseName, 1));
+  const transaction = database.transaction("items", "readonly");
+  const items = await requestToPromise<Array<Record<string, unknown>>>(
+    transaction.objectStore("items").getAll()
+  );
+  database.close();
+
+  return items;
 }
 
 describe("todo storage", () => {
-  let chromeStorage: StoredValue;
-
-  beforeEach(() => {
+  beforeEach(async () => {
     vi.restoreAllMocks();
-    chromeStorage = {};
-    vi.stubGlobal("chrome", createChromeMock(chromeStorage));
+    vi.stubGlobal("indexedDB", new IDBFactory());
     vi.stubGlobal("crypto", {
       randomUUID: vi.fn(() => "todo-id")
     });
+    await requestToPromise(indexedDB.deleteDatabase(databaseName));
   });
 
   it("creates todo items locally", async () => {
@@ -50,7 +50,7 @@ describe("todo storage", () => {
       content: "Finish the extension notes",
       completed: false
     });
-    expect(chromeStorage[storageKey]).toEqual(items);
+    expect(await readRawItems()).toHaveLength(1);
   });
 
   it("updates completion state", async () => {
@@ -61,7 +61,7 @@ describe("todo storage", () => {
     const updated = await updateTodoCompleted(created, created[0].id, true);
 
     expect(updated[0].completed).toBe(true);
-    expect(chromeStorage[storageKey]).toEqual(updated);
+    expect(await getTodoItems()).toEqual(updated);
   });
 
   it("updates and deletes existing todo items", async () => {
@@ -84,6 +84,7 @@ describe("todo storage", () => {
     const deleted = await deleteTodoItem(updated, created[0].id);
 
     expect(deleted).toEqual([]);
-    expect(chromeStorage[storageKey]).toEqual([]);
+    expect(await readRawItems()).toEqual([]);
   });
+
 });

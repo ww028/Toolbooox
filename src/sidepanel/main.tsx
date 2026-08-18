@@ -18,6 +18,10 @@ import { getDefaultLocale, getSavedLocale, type Locale } from "../shared/i18n/lo
 import { messages } from "../shared/i18n/messages";
 import { isCloseSidePanelMessage } from "../shared/sidePanel/messages";
 import {
+  getIndexedDbValue,
+  setIndexedDbValue
+} from "../shared/storage/indexedDbKeyValue";
+import {
   deleteTodoItem,
   getTodoItems,
   saveTodoItem,
@@ -34,30 +38,16 @@ const emptyTodoDraft: TodoDraft = {
 const ACTIVE_TOOL_STORAGE_KEY = "toolbooox.activeTool";
 type SidePanelToolKey = "calculator" | "todoItems";
 
-function hasChromeStorage(): boolean {
-  return typeof chrome !== "undefined" && Boolean(chrome.storage?.local);
-}
-
 function normalizeSidePanelToolKey(value: unknown): SidePanelToolKey {
   return value === "calculator" ? "calculator" : "todoItems";
 }
 
 async function getSavedSidePanelTool(): Promise<SidePanelToolKey> {
-  if (hasChromeStorage()) {
-    const result = await chrome.storage.local.get(ACTIVE_TOOL_STORAGE_KEY);
-    return normalizeSidePanelToolKey(result[ACTIVE_TOOL_STORAGE_KEY]);
-  }
-
-  return normalizeSidePanelToolKey(window.localStorage.getItem(ACTIVE_TOOL_STORAGE_KEY));
+  return normalizeSidePanelToolKey(await getIndexedDbValue(ACTIVE_TOOL_STORAGE_KEY));
 }
 
 async function saveSidePanelTool(toolKey: SidePanelToolKey): Promise<void> {
-  if (hasChromeStorage()) {
-    await chrome.storage.local.set({ [ACTIVE_TOOL_STORAGE_KEY]: toolKey });
-    return;
-  }
-
-  window.localStorage.setItem(ACTIVE_TOOL_STORAGE_KEY, toolKey);
+  await setIndexedDbValue(ACTIVE_TOOL_STORAGE_KEY, toolKey);
 }
 
 function padDatePart(value: number): string {
