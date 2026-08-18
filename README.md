@@ -2,9 +2,9 @@
 
 <div align="center">
 
-**一个本地优先的 Chrome 插件工具库**
+**一个本地优先的 Chrome 插件工具箱**
 
-`Manifest V3` · `React` · `TypeScript` · `IndexedDB` · `AES-GCM` · `Chrome Storage`
+`Manifest V3` · `React` · `TypeScript` · `Vite` · `IndexedDB` · `Chrome Storage` · `Web Crypto`
 
 [中文](#中文) | [English](#english)
 
@@ -14,462 +14,461 @@
 
 ## 中文
 
-> 帖子类型：项目介绍 / Chrome 插件 / 本地优先工具箱  
-> 当前状态：开发中，密码管理器、域名替换、查看 Cookie 可用  
-> 隐私原则：业务数据本地保存，不做云同步，不上传密码或 Cookie
+Toolbooox 是一个本地优先的 Chrome 浏览器插件，目标是把高频的小工具集中到一个轻量、可扩展、隐私友好的工具箱里。
 
-### 楼主贴
+当前功能包括：
 
-Toolbooox 是一个本地优先的 Chrome 浏览器插件，定位为日常可复用工具集合。当前版本包含密码管理器、域名替换、查看 Cookie、文本比较、计算器。所有业务数据都保存在用户自己的浏览器环境中，插件不依赖远端服务。
+- 密码管理器
+- 域名替换
+- 查看 Cookie
+- 文本比较
+- 计算器
+- 待办事项
+- 可配置菜单
+- Options 长文本比较页
+- Chrome Side Panel 侧边栏
 
-本仓库采用 MIT 协议开源，欢迎 Fork 和参与开发。
+插件不提供云同步，不上传密码、Cookie、文本或计算内容。业务数据保存在用户自己的浏览器环境中。
 
-### 帖子目录
+### 目录
 
-- [当前功能](#当前功能)
-- [获取与安装](#获取与安装)
-- [使用方式](#使用方式)
+- [功能说明](#功能说明)
 - [数据与隐私](#数据与隐私)
 - [权限说明](#权限说明)
-- [技术栈](#技术栈)
+- [技术方案](#技术方案)
+- [目录结构](#目录结构)
 - [本地开发](#本地开发)
 - [测试覆盖](#测试覆盖)
-- [公开仓库提醒](#公开仓库提醒)
+- [安装与发布](#安装与发布)
+- [开发约束](#开发约束)
 
-### 当前功能
-
-#### 置顶：密码管理器
-
-| 能力         | 说明                                                           |
-| ------------ | -------------------------------------------------------------- |
-| 本地保存     | 保存显示名称、网址、账号和密码                                 |
-| 当前网站匹配 | 打开插件时，根据当前标签页域名展示匹配账号，支持同域和子域匹配 |
-| 列表视图     | 使用紧凑列表展示账号，支持 `全部` 和 `其他网站` 两个筛选视图   |
-| 分页浏览     | 已保存账号每页展示 10 条，适合账号数量增长后的日常使用         |
-| 快捷操作     | 支持复制账号、复制密码、显示/隐藏密码、编辑和删除              |
-| 新增与编辑   | 表单位于列表上方，编辑时会自动滚动到表单区域                   |
-| 导入导出     | 支持导出 JSON 备份，也支持从 JSON 文件导入并替换本地密码库     |
-| 加密落库     | 密码字段写入 IndexedDB 前通过 Web Crypto API 使用 AES-GCM 加密 |
-
-#### 2 楼：域名替换
-
-| 能力       | 说明                                                      |
-| ---------- | --------------------------------------------------------- |
-| 规则保存   | 保存线上域名和本地开发域名的切换规则                      |
-| 智能填充   | 根据当前页面 URL 自动填充线上域名，并默认给出本地域名占位 |
-| 双向切换   | 当前页面命中线上域名时切到本地，命中本地域名时切回线上    |
-| URL 保真   | 切换时保留原路径、查询参数和哈希                          |
-| 多规则管理 | 支持保存、选择和删除多组域名规则                          |
-
-#### 3 楼：查看 Cookie
-
-| 能力     | 说明                                                                           |
-| -------- | ------------------------------------------------------------------------------ |
-| 接口配置 | 为当前网站保存一个要观察的接口地址                                             |
-| 请求捕获 | 通过后台 `webRequest.onBeforeSendHeaders` 捕获接口请求真实携带的 Cookie header |
-| 精确匹配 | 捕获时按接口 origin + pathname 匹配，忽略 query 和 hash                        |
-| 会话暂存 | 捕获到的 Cookie header 优先写入 `chrome.storage.session`，不做长期持久化       |
-| 结果展示 | 支持展示完整 Cookie header，并拆分成 Cookie 名和值列表                         |
-| 操作反馈 | 复制、保存、清空、捕获状态通过固定定位 Toast 反馈                              |
-
-#### 4 楼：文本比较
-
-| 能力         | 说明                                                             |
-| ------------ | ---------------------------------------------------------------- |
-| 左右输入     | 使用左右两栏多行文本框分别输入原始文本和修改后文本               |
-| 行级比较     | 点击比较后按行计算差异                                           |
-| Git 风格结果 | 同时展示未变更行、删除行和新增行，删除行红色高亮，新增行绿色高亮 |
-| 字符级标注   | 相邻的删除/新增行会继续高亮行内不同字符                          |
-| 采用变更     | 支持像 Git 一样对变更块选择 `采用左侧` 或 `采用右侧`             |
-| 本地处理     | 比较逻辑完全在浏览器本地运行，不上传文本内容                     |
-
-#### 5 楼：计算器
-
-| 能力       | 说明                                   |
-| ---------- | -------------------------------------- |
-| 表达式输入 | 支持直接输入表达式，也支持点击按钮输入 |
-| 基础运算   | 支持加、减、乘、除、小数、括号和负数   |
-| 键盘操作   | 支持回车计算，Esc 清空                 |
-| 本地处理   | 表达式解析和计算完全在浏览器本地运行   |
-
-### 获取与安装
-
-| 渠道            | 适用场景                                             | 入口                                                 |
-| --------------- | ---------------------------------------------------- | ---------------------------------------------------- |
-| Chrome 应用商店 | 推荐给可访问 Chrome 应用商店的用户，安装和更新更省心 | 待发布                                               |
-| GitHub Releases | 适合无法访问 Chrome 应用商店，或需要手动安装包的用户 | <https://github.com/ww028/Toolbooox/releases/latest> |
-
-手动安装需要下载 Release 中的 `toolbooox-v*.zip`，解压后在 `chrome://extensions` 中开启开发者模式并选择 `加载已解压的扩展程序`。
-
-详细步骤见：[手动安装指南](docs/INSTALL.zh-CN.md)。
-
-### 使用方式
+### 功能说明
 
 #### 密码管理器
 
-1. 在 Chrome 中点击 Toolbooox 插件图标。
-2. 点击 `新增`，填写显示名称、网址、账号和密码。
-3. 点击 `保存` 后，账号会保存到本地密码库。
-4. 之后在对应网站打开插件，`匹配账号` 会自动展示当前网站相关账号。
-5. 使用 `复制`、`显示`、`编辑`、`删除` 管理单条账号。
-6. 使用 `导出` 备份密码库，使用 `导入` 从 JSON 备份恢复数据。
+密码管理器用于本地保存网站账号信息。
+
+| 能力 | 说明 |
+| --- | --- |
+| 本地保存 | 保存显示名称、网址、账号、密码 |
+| 当前网站匹配 | 根据当前标签页 URL 自动匹配同域名或子域名账号 |
+| 全量列表 | 支持查看全部账号和其他网站账号 |
+| 分页浏览 | 已保存账号按每页 10 条分页 |
+| 快捷操作 | 支持复制账号、复制密码、显示/隐藏密码、编辑、删除 |
+| 导入导出 | 支持 JSON 导出备份和 JSON 导入替换本地密码库 |
+| 加密落库 | 密码字段写入 IndexedDB 前使用 Web Crypto API AES-GCM 加密 |
+
+实现位置：
+
+- `src/shared/passwordVault/storage.ts`
+- `src/shared/passwordVault/urlMatcher.ts`
+- `src/shared/passwordVault/pagination.ts`
+- `src/popup/main.tsx`
 
 #### 域名替换
 
-1. 打开需要切换的页面。
-2. 进入 `域名替换`。
-3. 填写线上域名和本地开发域名。
-4. 点击 `保存规则` 保存常用配置。
-5. 点击切换按钮，插件会在当前标签页中替换域名，并保留路径、参数和哈希。
+域名替换用于在在线环境和本地开发环境之间快速切换当前页面 URL。
+
+| 能力 | 说明 |
+| --- | --- |
+| 规则保存 | 保存线上域名与本地域名映射 |
+| 自动填充 | 根据当前标签页自动填充线上域名 |
+| 双向切换 | 命中线上域名时切本地，命中本地域名时切线上 |
+| URL 保真 | 保留 pathname、query、hash |
+| 规则管理 | 支持保存、选择、删除规则 |
+
+实现位置：
+
+- `src/shared/devTools/domainSwitcher.ts`
+- `src/popup/main.tsx`
 
 #### 查看 Cookie
 
-1. 打开需要观察接口请求的页面。
-2. 进入 `查看 Cookie`。
-3. 填写接口地址并保存，例如 `https://api.example.test/user/info`。
-4. 刷新页面或重新触发该接口请求。
-5. 插件会在后台捕获这个接口真实携带的 Cookie header。
+查看 Cookie 用于观察某个接口请求真实携带的 Cookie header。
+
+| 能力 | 说明 |
+| --- | --- |
+| 接口配置 | 为当前网站保存一个要观察的接口 URL |
+| 请求捕获 | 后台通过 `chrome.webRequest.onBeforeSendHeaders` 捕获请求头 |
+| 精确匹配 | 捕获时按 origin + pathname 匹配，忽略 query/hash |
+| 会话暂存 | 捕获结果优先保存到 `chrome.storage.session` |
+| 兜底读取 | 必要时使用 `chrome.cookies` 按 URL 读取 Cookie |
+| 结果展示 | 展示完整 Cookie header，并拆分成 Cookie 名和值 |
+
+实现位置：
+
+- `src/background/main.ts`
+- `src/shared/chrome/cookies.ts`
+- `src/popup/main.tsx`
 
 #### 文本比较
 
-1. 进入 `文本比较`。
-2. 在左侧输入原始文本。
-3. 在右侧输入修改后文本。
-4. 点击 `比较`。
-5. 在比较结果中查看新增、删除和行内差异，也可以对变更块选择采用左侧或右侧内容。
+文本比较用于本地对比两段文本，提供类似 Git diff 的查看和采用变更能力。
+
+| 能力 | 说明 |
+| --- | --- |
+| 左右输入 | 左侧为原始文本，右侧为修改后文本 |
+| 行级差异 | 按行标记新增、删除、未变更 |
+| 字符级高亮 | 相邻增删行会继续标记行内字符差异 |
+| 采用变更 | 支持对变更块选择采用左侧或右侧 |
+| 长文本页 | 超过阈值时可打开 Options 全屏长文本比较 |
+| 折叠相同行 | Options 页中长段未变更内容可折叠/展开 |
+
+实现位置：
+
+- `src/shared/textCompare/diff.ts`
+- `src/shared/textCompare/storage.ts`
+- `src/popup/main.tsx`
+- `src/options/main.tsx`
 
 #### 计算器
 
-1. 进入 `计算器`。
-2. 输入表达式，或点击数字和运算符按钮。
-3. 点击 `=` 或按回车计算结果。
-4. 使用 `C` 清空，使用 `⌫` 删除最后一个字符。
+计算器支持表达式输入、按钮输入和侧边栏持续使用。
+
+| 能力 | 说明 |
+| --- | --- |
+| 表达式输入 | 支持直接输入表达式 |
+| 按钮输入 | 支持数字、加减乘除、百分号、正负切换、小数点、删除、清空 |
+| 键盘操作 | 回车计算，Esc 清空 |
+| 精确计算 | 使用 BigInt 有理数模型计算，避免 JS 浮点误差 |
+| 千分位 | 结果整数部分按千分位展示 |
+| 中文读法 | 结果整数部分超过 3 位时展示中文读法 |
+| 状态恢复 | 弹窗关闭再打开后恢复表达式、结果和中文读法 |
+| 最近计算 | 侧边栏展示最近 10 次计算记录，超出自动裁剪 |
+
+计算器没有使用 `eval` 或 `Function`。表达式会被解析为 token，经 shunting-yard 流程转换并计算。内部使用 BigInt 分子/分母保存有理数，中间步骤不提前四舍五入；只有最终展示无限循环小数时才按 10 位小数格式化。
+
+示例：
+
+```text
+0.1 + 0.2 => 0.3
+1 / 6 * 6 => 1
+1000000000 + 2000000000 => 3,000,000,000
+180000000 => 180,000,000（一亿八千万）
+```
+
+实现位置：
+
+- `src/shared/calculator/evaluate.ts`
+- `src/shared/calculator/storage.ts`
+- `src/popup/main.tsx`
+- `src/sidepanel/main.tsx`
+
+#### 待办事项
+
+待办事项用于记录轻量任务，支持弹窗与侧边栏使用。
+
+| 能力 | 说明 |
+| --- | --- |
+| 本地保存 | 待办数据保存在本地存储 |
+| 状态管理 | 支持待办/已办结状态 |
+| 编辑删除 | 支持编辑和删除单条待办 |
+| 时间展示 | 展示创建时间和已进行天数 |
+| 侧边栏 | 可在 Side Panel 中持续查看和操作 |
+| 统计信息 | 展示待办、已办结、总计数量 |
+
+实现位置：
+
+- `src/shared/todos/storage.ts`
+- `src/popup/main.tsx`
+- `src/sidepanel/main.tsx`
+
+#### 可配置菜单
+
+设置页支持控制左侧功能菜单。
+
+| 能力 | 说明 |
+| --- | --- |
+| 显隐控制 | 可隐藏低频功能 |
+| 排序控制 | 可调整功能菜单顺序 |
+| 状态持久化 | 菜单配置保存在 `chrome.storage.local` |
+| 版本展示 | 设置页展示当前插件版本 |
 
 ### 数据与隐私
 
-> 置顶提醒：Toolbooox 是本地工具箱，不是云同步服务。
+Toolbooox 的设计原则是本地优先。
 
-| 项目            | 当前实现                                                                               |
-| --------------- | -------------------------------------------------------------------------------------- |
-| 网络请求        | 插件不发起业务上传请求；密码和 Cookie 不会上传到服务器                                 |
-| 密码主存储      | 浏览器本地 IndexedDB，数据库名为 `toolbooox.passwordVault`                             |
-| 密码加密        | 密码字段写入 IndexedDB 前使用 AES-GCM 加密                                             |
-| 本地密钥        | AES-GCM 原始密钥保存在本地浏览器存储中                                                 |
-| 旧数据迁移      | 旧版本 `chrome.storage.local` 密码数据会在首次读取时自动迁移到 IndexedDB，并清理旧 Key |
-| 域名规则        | 域名替换规则保存在 `chrome.storage.local`                                              |
-| Cookie 配置     | 要观察的接口地址保存在 `chrome.storage.local`                                          |
-| Cookie 捕获结果 | 捕获到的 Cookie header 优先保存在 `chrome.storage.session`，浏览器会话结束后清除       |
-| 导出文件        | 密码库 JSON 导出文件包含可恢复的明文账号数据，请只保存在可信位置                       |
+| 数据 | 存储位置 | 说明 |
+| --- | --- | --- |
+| 密码库 | IndexedDB | 密码字段使用 AES-GCM 加密后保存 |
+| 密码加密密钥 | 本地浏览器存储 | 用于本机解密本机保存的密码 |
+| 域名替换规则 | `chrome.storage.local` | 本地规则，不联网 |
+| Cookie 观察配置 | `chrome.storage.local` | 保存每个站点要观察的接口 URL |
+| Cookie 捕获结果 | `chrome.storage.session` 优先 | 会话级暂存，浏览器会话结束后清理 |
+| 文本比较状态 | `chrome.storage.local` | 保存左右文本和比较状态，便于打开 Options |
+| 计算器状态 | `chrome.storage.local` | 保存表达式、结果、中文描述、最近 10 次记录 |
+| 待办事项 | `chrome.storage.local` | 保存待办列表 |
+| 菜单设置 | `chrome.storage.local` | 保存显隐、排序、最后激活功能 |
+| 语言设置 | `chrome.storage.local` | 保存插件界面语言 |
 
-当前版本的本地加密用于防止密码以明文直接落库；如果本地浏览器数据被完整读取，仍应视为存在被解密风险。后续可加入主密码和密钥派生机制，进一步提升本地数据保护强度。
+注意：
+
+- 插件不发起业务数据上传请求。
+- 密码库导出的 JSON 文件包含可恢复账号数据，应只保存在可信位置。
+- AES-GCM 本地加密用于避免密码明文直接落库；如果本地浏览器数据和本地密钥同时被完整读取，仍需要视为存在风险。
 
 ### 权限说明
 
-| 权限         | 用途                                                                  |
-| ------------ | --------------------------------------------------------------------- |
-| `storage`    | 保存语言、菜单状态、密码密钥、域名规则、Cookie 观察配置和会话捕获结果 |
-| `activeTab`  | 读取当前标签页 URL，用于账号匹配、域名替换和当前网站展示              |
-| `cookies`    | 在查看 Cookie 功能中按接口 URL 读取 Cookie 作为兜底展示               |
-| `webRequest` | 捕获指定接口请求实际携带的 Cookie header                              |
-| `<all_urls>` | 允许在用户保存的任意站点/API 地址上做域名匹配和请求监听               |
+`public/manifest.json` 当前声明：
 
-### 技术栈
+| 权限 | 用途 |
+| --- | --- |
+| `storage` | 保存密码密钥、菜单设置、域名规则、Cookie 配置、计算器状态、待办事项等 |
+| `activeTab` | 获取当前标签页 URL，用于账号匹配、域名替换、当前网站展示 |
+| `cookies` | 查看 Cookie 功能中按 URL 读取 Cookie 作为兜底 |
+| `webRequest` | 捕获指定接口请求真实携带的 Cookie header |
+| `sidePanel` | 打开 Chrome Side Panel |
+| `<all_urls>` | 支持用户配置任意网站/API 地址进行匹配和监听 |
 
-| 分类       | 技术                                                          |
-| ---------- | ------------------------------------------------------------- |
-| 插件规范   | Manifest V3                                                   |
-| 前端框架   | React                                                         |
-| 构建工具   | Vite                                                          |
-| 语言       | TypeScript                                                    |
-| 浏览器能力 | Chrome Storage / Active Tab / Cookies / WebRequest            |
-| 国际化     | Chrome 原生 i18n (`_locales`)                                 |
-| 本地存储   | IndexedDB / `chrome.storage.local` / `chrome.storage.session` |
-| 密码加密   | Web Crypto API AES-GCM                                        |
-| 单元测试   | Vitest + fake-indexeddb                                       |
+### 技术方案
+
+| 分类 | 方案 |
+| --- | --- |
+| 插件规范 | Manifest V3 |
+| 前端 | React + TypeScript |
+| 构建 | Vite，多入口构建 popup/options/sidepanel/background |
+| 后台脚本 | MV3 service worker |
+| 本地数据库 | IndexedDB |
+| 轻量状态 | `chrome.storage.local` |
+| 会话状态 | `chrome.storage.session` |
+| 密码加密 | Web Crypto API AES-GCM |
+| 计算器 | BigInt 有理数计算，避免 JS 浮点误差，不使用 `eval` |
+| 文本比较 | 本地 diff 逻辑，支持行级和字符级结果 |
+| 国际化 | Manifest 使用 `_locales`；应用内文案由 `src/shared/i18n/messages.ts` 管理 |
+| 测试 | Vitest + fake-indexeddb |
+
+### 目录结构
+
+```text
+.
+├── public/
+│   ├── manifest.json
+│   └── _locales/
+├── src/
+│   ├── background/          # MV3 service worker
+│   ├── options/             # Options 长文本比较页
+│   ├── popup/               # 插件弹窗主应用
+│   ├── sidepanel/           # Chrome Side Panel 页面
+│   └── shared/
+│       ├── calculator/      # 计算器解析、精确计算、状态存储
+│       ├── chrome/          # Chrome API 辅助封装
+│       ├── devTools/        # 域名替换逻辑
+│       ├── i18n/            # 应用内文案和语言设置
+│       ├── passwordVault/   # 密码库、加密、导入导出、分页
+│       ├── sidePanel/       # popup 与 side panel 通信消息
+│       ├── textCompare/     # 文本比较 diff 和状态
+│       └── todos/           # 待办事项存储
+├── docs/
+│   ├── INSTALL.zh-CN.md
+│   └── RELEASE.zh-CN.md
+├── popup.html
+├── options.html
+├── sidepanel.html
+└── vite.config.ts
+```
 
 ### 本地开发
 
-#### 1 楼：安装与构建
+安装依赖：
 
 ```bash
 npm install
-npm run build
 ```
 
-构建产物会输出到 `dist/` 目录。在 Chrome 中打开 `chrome://extensions`，开启开发者模式后，选择 `dist/` 作为已解压的扩展程序加载。
-
-#### 2 楼：常用脚本
+常用命令：
 
 ```bash
 npm run dev      # 启动 Vite 开发服务
-npm run build    # 类型检查并构建扩展
+npm run build    # TypeScript 检查并构建扩展
 npm run test     # 运行单元测试
-npm run preview  # 预览构建结果
+npm run preview  # 预览构建产物
 ```
 
-发布新版本前，请按 [发布流程](docs/RELEASE.zh-CN.md) 完成测试、隐私扫描、打包和 Release 检查。
+加载扩展：
+
+1. 执行 `npm run build`。
+2. 打开 `chrome://extensions`。
+3. 开启开发者模式。
+4. 选择 `加载已解压的扩展程序`。
+5. 选择项目的 `dist/` 目录。
+
+注意：Vite 构建产物文件名带 hash。每次重新 build 后，需要在 `chrome://extensions` 手动刷新扩展，否则 Chrome 可能仍运行旧代码。
 
 ### 测试覆盖
 
 当前单元测试覆盖：
 
-- 密码库 IndexedDB 加密写入与解密读取。
-- 无效网址校验。
-- 同一网站相同账号去重。
-- 无效导入数据不覆盖已有数据。
-- 旧 `chrome.storage.local` 数据自动迁移到 IndexedDB。
-- 域名替换的 URL 保真、双向切换和规则管理。
-- Cookie 捕获 URL 匹配、当前页面域名匹配和 Cookie header 解析。
+- 密码库 IndexedDB 加密写入、解密读取、旧数据迁移。
+- 密码库 URL 校验、账号去重、导入数据校验。
+- 域名替换规则保存、双向切换、URL 保真。
+- Cookie 捕获 URL 匹配、Cookie header 解析。
+- 文本比较行级 diff、字符级 diff、变更块应用。
+- 计算器精确小数、大整数、除法链式计算、百分号、正负切换、中文读法。
+- 待办事项新增、更新、删除、完成状态。
 
-### 公开仓库提醒
+发布前建议至少执行：
 
-- 仓库内示例域名使用 `.test` 保留域，避免混入真实业务域名。
-- `package-lock.json` 使用公开 npm registry，不保留内部依赖源。
-- 不要提交 `toolbooox-passwords-*.json` 导出文件；该文件包含明文账号数据。
-- 不要把真实 Cookie、token、私钥、内部域名或截图放入仓库。
+```bash
+npm run test
+npm run build
+```
 
-### 回复区
+### 安装与发布
 
-**Q：这是云端密码管理器吗？**  
-A：不是。当前版本只做本地保存，不提供云同步。
+| 渠道 | 状态 | 说明 |
+| --- | --- | --- |
+| Chrome 应用商店 | 待发布 | 面向可访问 Chrome Web Store 的用户 |
+| GitHub Releases | 计划支持 | 面向手动安装用户 |
 
-**Q：密码或 Cookie 是否会上传？**  
-A：不会。插件不发起业务上传请求，密码和 Cookie header 不会上传到服务器。
+手动安装说明见：[docs/INSTALL.zh-CN.md](docs/INSTALL.zh-CN.md)。
 
-**Q：导出的 JSON 是否安全？**  
-A：导出文件包含可恢复的明文账号数据，需要自行妥善保管。
+发布流程见：[docs/RELEASE.zh-CN.md](docs/RELEASE.zh-CN.md)。
 
-**Q：为什么需要 `<all_urls>`？**  
-A：域名替换和 Cookie 查看需要支持用户输入的任意站点/API 地址。实际展示和捕获逻辑仍按当前网站和已保存接口配置做匹配。
+### 开发约束
+
+- 不上传用户业务数据。
+- 不使用 `eval` 或 `Function` 执行用户输入。
+- 不提交真实 Cookie、token、内部域名、私钥或导出的密码库 JSON。
+- 新增功能优先抽到 `src/shared/`，便于 popup、options、sidepanel 复用。
+- 涉及核心逻辑时补单元测试，尤其是存储、解析、加密、计算、diff。
 
 ---
 
 ## English
 
-> Post type: Project introduction / Chrome extension / Local-first toolbox  
-> Current status: In development, Password Manager, Domain Switcher, and Cookie Viewer are available  
-> Privacy principle: Local storage, no cloud sync, no password or Cookie upload
+Toolbooox is a local-first Chrome extension that collects everyday utilities in one compact toolbox. It is built for local use, privacy, and extensibility.
 
-### Original Post
+Current features:
 
-Toolbooox is a local-first Chrome extension designed as a reusable everyday toolbox. The current version includes Password Manager, Domain Switcher, Cookie Viewer, Text Compare, and Calculator. Business data stays in the user's browser environment, and the extension does not depend on a remote service.
+- Password Manager
+- Domain Switcher
+- Cookie Viewer
+- Text Compare
+- Calculator
+- Todo Items
+- Configurable menu
+- Options page for long text comparison
+- Chrome Side Panel support
 
-This repository is open sourced under the MIT License. Forks and contributions are welcome.
+Toolbooox does not provide cloud sync and does not upload passwords, cookies, text, calculations, or todo data.
 
-### Thread Index
-
-- [Current Features](#current-features)
-- [Get and Install](#get-and-install)
-- [Usage](#usage)
-- [Data and Privacy](#data-and-privacy)
-- [Permissions](#permissions)
-- [Tech Stack](#tech-stack)
-- [Local Development](#local-development)
-- [Test Coverage](#test-coverage)
-- [Public Repository Checklist](#public-repository-checklist)
-
-### Current Features
-
-#### Pinned: Password Manager
-
-| Capability            | Description                                                                                             |
-| --------------------- | ------------------------------------------------------------------------------------------------------- |
-| Local save            | Save display name, URL, account, and password                                                           |
-| Current site matching | Match saved accounts from the active tab domain, including same-domain and subdomain matches            |
-| List view             | Compact account list with `All` and `Other Sites` filters                                               |
-| Pagination            | Saved accounts are shown 10 per page                                                                    |
-| Quick actions         | Copy account, copy password, show/hide password, edit, and delete                                       |
-| Add and edit flow     | The form is placed above the list, and editing scrolls back to the form area                            |
-| Import and export     | Export a JSON backup and import from a JSON file to replace the local vault                             |
-| Encrypted storage     | Password fields are encrypted with AES-GCM through the Web Crypto API before being written to IndexedDB |
-
-#### Reply 2: Domain Switcher
-
-| Capability       | Description                                                                                     |
-| ---------------- | ----------------------------------------------------------------------------------------------- |
-| Saved rules      | Save online-domain and local-development-domain pairs                                           |
-| Smart prefill    | Prefill the online domain from the current page URL and provide a local development placeholder |
-| Two-way switch   | Switch from online to local, or from local back to online                                       |
-| URL preservation | Preserve the original path, query string, and hash                                              |
-| Rule management  | Save, select, and delete multiple domain rules                                                  |
-
-#### Reply 3: Cookie Viewer
-
-| Capability      | Description                                                                                         |
-| --------------- | --------------------------------------------------------------------------------------------------- |
-| API config      | Save one API URL to observe for the current website                                                 |
-| Request capture | Capture the Cookie header actually attached to the API request via `webRequest.onBeforeSendHeaders` |
-| Exact matching  | Match by API origin + pathname while ignoring query strings and hashes                              |
-| Session storage | Store captured Cookie headers in `chrome.storage.session` first, avoiding long-term persistence     |
-| Result view     | Display the full Cookie header and split it into name/value rows                                    |
-| Feedback        | Save, copy, clear, and capture states use fixed-position Toast feedback                             |
-
-#### Reply 4: Text Compare
-
-| Capability         | Description                                                                                       |
-| ------------------ | ------------------------------------------------------------------------------------------------- |
-| Side-by-side input | Enter original and changed text in two multiline inputs                                           |
-| Line diff          | Compare text line by line after clicking Compare                                                  |
-| Git-style output   | Show unchanged, removed, and added lines; highlight removed lines in red and added lines in green |
-| Inline highlights  | Adjacent removed/added lines also highlight changed characters within the line                    |
-| Accept changes     | Accept the left or right side for a changed block, similar to a Git merge                         |
-| Local processing   | Comparison runs entirely in the browser and does not upload text                                  |
-
-#### Reply 5: Calculator
-
-| Capability       | Description                                                                                           |
-| ---------------- | ----------------------------------------------------------------------------------------------------- |
-| Expression input | Type expressions directly or use calculator buttons                                                   |
-| Basic arithmetic | Supports addition, subtraction, multiplication, division, decimals, parentheses, and negative numbers |
-| Keyboard support | Press Enter to calculate and Escape to clear                                                          |
-| Local processing | Parsing and calculation run entirely in the browser                                                   |
-
-### Get and Install
-
-| Channel          | Best for                                                                                 | Link                                                 |
-| ---------------- | ---------------------------------------------------------------------------------------- | ---------------------------------------------------- |
-| Chrome Web Store | Recommended when the Chrome Web Store is accessible. Installation and updates are easier | To be published                                      |
-| GitHub Releases  | Manual installation when the Chrome Web Store is unavailable                             | <https://github.com/ww028/Toolbooox/releases/latest> |
-
-Manual installation requires downloading `toolbooox-v*.zip` from a Release, extracting it, opening `chrome://extensions`, enabling Developer mode, and choosing `Load unpacked`.
-
-Chinese guide: [Manual installation guide](docs/INSTALL.zh-CN.md).
-
-### Usage
+### Features
 
 #### Password Manager
 
-1. Click the Toolbooox extension icon in Chrome.
-2. Click `Add`, then fill in display name, URL, account, and password.
-3. Click `Save` to store the account in the local vault.
-4. When you open the popup on the related website, `Matched Accounts` shows relevant accounts automatically.
-5. Use `Copy`, `Show`, `Edit`, and `Delete` to manage individual accounts.
-6. Use `Export` to back up the vault and `Import` to restore from a JSON backup.
+- Stores display name, URL, username, and password locally.
+- Matches saved accounts by the current tab hostname, including subdomains.
+- Supports all accounts, other-site accounts, pagination, copy, show/hide, edit, and delete.
+- Supports JSON export/import.
+- Encrypts password fields with AES-GCM before writing them to IndexedDB.
 
 #### Domain Switcher
 
-1. Open the page you want to switch.
-2. Go to `Domain Switcher`.
-3. Enter the online domain and the local development domain.
-4. Click `Save Rule` to keep the pair.
-5. Click the switch button. The extension updates the active tab URL while preserving path, query string, and hash.
+- Saves online-domain and local-domain mapping rules.
+- Auto-fills the online domain from the current tab.
+- Switches both directions between online and local domains.
+- Preserves path, query, and hash.
 
 #### Cookie Viewer
 
-1. Open the page that triggers the API request.
-2. Go to `View Cookie`.
-3. Enter and save an API URL, for example `https://api.example.test/user/info`.
-4. Refresh the page or trigger that API request again.
-5. The background listener captures the Cookie header actually attached to that API request.
+- Saves an API request URL for the current site.
+- Captures the real Cookie header with `chrome.webRequest.onBeforeSendHeaders`.
+- Matches by origin + pathname and ignores query/hash.
+- Stores captured headers in `chrome.storage.session` when available.
+- Displays both the full Cookie header and parsed Cookie name/value rows.
 
 #### Text Compare
 
-1. Go to `Text Compare`.
-2. Enter the original text on the left.
-3. Enter the changed text on the right.
-4. Click `Compare`.
-5. Review added, removed, and inline changed content. You can also accept the left or right side for each changed block.
+- Compares left and right text locally.
+- Shows Git-style added, removed, and unchanged lines.
+- Highlights inline character differences.
+- Supports accepting left/right change blocks.
+- Opens an Options page for long text comparison and unchanged-line folding.
 
 #### Calculator
 
-1. Go to `Calculator`.
-2. Type an expression, or use the number and operator buttons.
-3. Click `=` or press Enter to calculate.
-4. Use `C` to clear and `⌫` to remove the last character.
+- Supports expression input and keypad input.
+- Supports decimal numbers, negative numbers, percent, sign toggle, and arithmetic operators.
+- Uses a BigInt rational-number engine to avoid JavaScript floating-point errors.
+- Does not use `eval` or `Function`.
+- Formats large results with thousands separators.
+- Shows Chinese result descriptions when the integer part has more than 3 digits.
+- Persists expression/result state and keeps the latest 10 calculation history items in Side Panel.
 
-### Data and Privacy
+#### Todo Items
 
-> Pinned note: Toolbooox is a local toolbox, not a cloud sync service.
+- Stores todo items locally.
+- Supports pending/done state, edit, delete, created time, elapsed days, and summary stats.
+- Available in both popup and Side Panel.
 
-| Item                   | Current implementation                                                                                                         |
-| ---------------------- | ------------------------------------------------------------------------------------------------------------------------------ |
-| Network requests       | The extension does not make business upload requests. Passwords and Cookie headers are not uploaded                            |
-| Password storage       | Browser IndexedDB, database `toolbooox.passwordVault`                                                                          |
-| Password encryption    | Password fields are encrypted with AES-GCM before being written                                                                |
-| Local key              | The raw AES-GCM key is stored in local browser storage                                                                         |
-| Legacy migration       | Previous `chrome.storage.local` password data is migrated to IndexedDB automatically on first read, and the old key is removed |
-| Domain rules           | Domain switcher rules are stored in `chrome.storage.local`                                                                     |
-| Cookie config          | The API URL to observe is stored in `chrome.storage.local`                                                                     |
-| Captured Cookie result | Captured Cookie headers are stored in `chrome.storage.session` first and cleared with the browser session                      |
-| Export file            | JSON exports contain plaintext account data that can restore the vault. Store them only in trusted locations                   |
+### Privacy And Storage
 
-Current local encryption prevents passwords from being written as plaintext directly. A full read of local browser data should still be treated as decryptable. A master password and key derivation flow can further strengthen local data protection in a future version.
+| Data | Storage |
+| --- | --- |
+| Password vault | IndexedDB, password field encrypted with AES-GCM |
+| Password encryption key | Local browser storage |
+| Domain switch rules | `chrome.storage.local` |
+| Cookie viewer config | `chrome.storage.local` |
+| Captured Cookie header | `chrome.storage.session` when available |
+| Text compare state | `chrome.storage.local` |
+| Calculator state/history | `chrome.storage.local` |
+| Todo items | `chrome.storage.local` |
+| Menu and locale settings | `chrome.storage.local` |
 
 ### Permissions
 
-| Permission   | Purpose                                                                                                |
-| ------------ | ------------------------------------------------------------------------------------------------------ |
-| `storage`    | Save locale, menu state, password key, domain rules, Cookie viewer config, and session capture results |
-| `activeTab`  | Read the current tab URL for account matching, domain switching, and current-site display              |
-| `cookies`    | Read cookies for the API URL as a Cookie Viewer fallback                                               |
-| `webRequest` | Capture the Cookie header actually attached to a saved API request                                     |
-| `<all_urls>` | Support user-entered site/API URLs for matching and request listening                                  |
+| Permission | Purpose |
+| --- | --- |
+| `storage` | Persist local settings and feature data |
+| `activeTab` | Read the current tab URL for matching and switching |
+| `cookies` | Fallback Cookie reading by URL |
+| `webRequest` | Capture outgoing request Cookie headers |
+| `sidePanel` | Open Chrome Side Panel |
+| `<all_urls>` | Support user-configured sites and API URLs |
 
 ### Tech Stack
 
-| Category             | Technology                                                    |
-| -------------------- | ------------------------------------------------------------- |
-| Extension spec       | Manifest V3                                                   |
-| Frontend             | React                                                         |
-| Build tool           | Vite                                                          |
-| Language             | TypeScript                                                    |
-| Browser APIs         | Chrome Storage / Active Tab / Cookies / WebRequest            |
-| Internationalization | Chrome native i18n (`_locales`)                               |
-| Local storage        | IndexedDB / `chrome.storage.local` / `chrome.storage.session` |
-| Password encryption  | Web Crypto API AES-GCM                                        |
-| Unit tests           | Vitest + fake-indexeddb                                       |
+- Manifest V3
+- React
+- TypeScript
+- Vite
+- IndexedDB
+- Chrome Storage
+- Web Crypto API AES-GCM
+- Vitest
+- fake-indexeddb
 
-### Local Development
-
-#### Reply 1: Install and Build
+### Development
 
 ```bash
 npm install
+npm run dev
+npm run test
 npm run build
 ```
 
-The build output is written to `dist/`. Open `chrome://extensions` in Chrome, enable Developer mode, and load `dist/` as an unpacked extension.
+Load the extension from `dist/` in `chrome://extensions`. After every production build, reload the extension manually because Vite output filenames include hashes.
 
-#### Reply 2: Common Scripts
+### Project Structure
 
-```bash
-npm run dev      # Start the Vite dev server
-npm run build    # Type-check and build the extension
-npm run test     # Run unit tests
-npm run preview  # Preview the build output
+```text
+src/
+├── background/        # MV3 service worker
+├── options/           # long text comparison page
+├── popup/             # popup app
+├── sidepanel/         # Chrome Side Panel app
+└── shared/            # reusable business logic and storage modules
 ```
 
-Before publishing a new version, follow the [release process](docs/RELEASE.zh-CN.md) for testing, privacy scanning, packaging, and Release checks.
+### Release
 
-### Test Coverage
+- Manual install guide: [docs/INSTALL.zh-CN.md](docs/INSTALL.zh-CN.md)
+- Release checklist: [docs/RELEASE.zh-CN.md](docs/RELEASE.zh-CN.md)
 
-Current unit tests cover:
+### Development Rules
 
-- Encrypted IndexedDB writes and decrypted reads for the password vault.
-- Invalid URL validation.
-- Duplicate account prevention for the same website.
-- Invalid import payloads preserving existing data.
-- Automatic migration from legacy `chrome.storage.local` data to IndexedDB.
-- Domain switching with URL preservation, two-way switching, and rule management.
-- Cookie capture URL matching, current-page hostname matching, and Cookie header parsing.
-
-### Public Repository Checklist
-
-- Example domains use the reserved `.test` suffix to avoid real business domains.
-- `package-lock.json` uses the public npm registry and does not keep internal registry URLs.
-- Do not commit `toolbooox-passwords-*.json` exports; those files contain plaintext account data.
-- Do not commit real Cookie headers, tokens, private keys, internal domains, or screenshots containing sensitive data.
-
-### Replies
-
-**Q: Is this a cloud password manager?**  
-A: No. The current version stores data locally and does not provide cloud sync.
-
-**Q: Are passwords or Cookie headers uploaded?**  
-A: No. The extension does not make business upload requests, and passwords or Cookie headers are not uploaded to a server.
-
-**Q: Is the exported JSON safe?**  
-A: Export files contain plaintext account data that can restore the vault, so they should be stored carefully.
-
-**Q: Why does the extension need `<all_urls>`?**  
-A: Domain Switcher and Cookie Viewer need to support arbitrary site/API URLs entered by the user. Display and capture logic still match against the current website and saved API config.
+- Do not upload user data.
+- Do not use `eval` or `Function`.
+- Do not commit real cookies, tokens, internal domains, private keys, or exported password JSON files.
+- Put reusable logic under `src/shared/`.
+- Add tests for storage, parsing, encryption, calculation, and diff logic.

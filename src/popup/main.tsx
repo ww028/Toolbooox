@@ -1444,7 +1444,6 @@ function PopupApp() {
             <section className="feature-panel" aria-label={t.passwordManager}>
               <div className="feature-header">
                 <div>
-                  <p className="eyebrow">{t.localPasswordManager}</p>
                   <h2>{t.passwordManager}</h2>
                 </div>
 
@@ -1663,7 +1662,6 @@ function PopupApp() {
           <section className="feature-panel" aria-label={t.domainSwitcher}>
             <div className="feature-header">
               <div>
-                <p className="eyebrow">{t.frontendDeveloperTools}</p>
                 <h2>{t.domainSwitcher}</h2>
               </div>
             </div>
@@ -2015,7 +2013,6 @@ function PopupApp() {
           <section className="feature-panel" aria-label={t.textCompare}>
             <div className="feature-header">
               <div>
-                <p className="eyebrow">{t.frontendDeveloperTools}</p>
                 <h2>{t.textCompare}</h2>
               </div>
               <div className="feature-actions">
@@ -2184,7 +2181,6 @@ function PopupApp() {
           <section className="feature-panel" aria-label={t.cookieViewer}>
             <div className="feature-header">
               <div>
-                <p className="eyebrow">{t.frontendDeveloperTools}</p>
                 <h2>{t.cookieViewer}</h2>
               </div>
               <div className="feature-actions">

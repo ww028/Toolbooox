@@ -129,7 +129,6 @@ function OptionsApp() {
     <main className={`options-shell${diffLines ? " has-diff" : ""}`}>
       <header className="options-header">
         <div>
-          <p className="eyebrow">Toolbooox</p>
           <h1>{t.longTextCompare}</h1>
           <p className="options-description">{t.longTextCompareHelp}</p>
         </div>
