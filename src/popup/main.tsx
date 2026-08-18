@@ -629,12 +629,6 @@ function PopupApp() {
     setSavedEntriesPage(1);
   };
 
-  const handleNewDomainRule = () => {
-    setSelectedDomainRuleId(null);
-    setDomainSwitcherDraft(createDefaultDomainSwitcherDraft(activeTab));
-    setMessage("");
-  };
-
   const handleSelectDomainRule = (rule: DomainSwitcherRule) => {
     setSelectedDomainRuleId(rule.id);
     setDomainSwitcherDraft(toDomainSwitcherDraft(rule));
@@ -1099,9 +1093,6 @@ function PopupApp() {
             <form className="developer-form" onSubmit={handleSwitchDomain}>
               <div className="section-heading">
                 <h3>{t.domainSwitcher}</h3>
-                <button className="text-button" type="button" onClick={handleNewDomainRule}>
-                  {t.addDomainRule}
-                </button>
               </div>
               <div className="domain-grid">
                 <label>

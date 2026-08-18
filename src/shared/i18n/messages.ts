@@ -3,7 +3,6 @@ import type { Locale } from "./locale";
 type Messages = {
   readonly account: string;
   readonly add: string;
-  readonly addDomainRule: string;
   readonly addFirstAccount: string;
   readonly addPassword: string;
   readonly cancel: string;
@@ -114,7 +113,6 @@ export const messages: Record<Locale, Messages> = {
   "zh-CN": {
     account: "账号",
     add: "新增",
-    addDomainRule: "新增规则",
     addFirstAccount: "新增第一个账号",
     addPassword: "新增密码",
     cancel: "取消",
@@ -224,7 +222,6 @@ export const messages: Record<Locale, Messages> = {
   en: {
     account: "Account",
     add: "Add",
-    addDomainRule: "Add Rule",
     addFirstAccount: "Add First Account",
     addPassword: "Add Password",
     cancel: "Cancel",
