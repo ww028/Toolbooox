@@ -23,6 +23,7 @@ Toolbooox 是一个本地优先的 Chrome 浏览器插件，目标是把高频�
 - 查看 Cookie
 - 文本比较
 - 计算器
+- 地址导航
 - 待办事项
 - 可配置菜单
 - Options 长文本比较页
@@ -154,6 +155,23 @@ Toolbooox 是一个本地优先的 Chrome 浏览器插件，目标是把高频�
 - `src/popup/main.tsx`
 - `src/sidepanel/main.tsx`
 
+#### 地址导航
+
+地址导航用于保存常用网站入口，点击网址即可在新页面打开。
+
+| 能力 | 说明 |
+| --- | --- |
+| 本地保存 | 保存标题、网站 URL 和备注 |
+| URL 校验 | 保存前校验网址，只接受 `http/https` 地址 |
+| 协议补全 | 输入 `example.com` 时会自动补全为 `https://example.com/` |
+| 快速打开 | 点击标题、网址或打开按钮，会在新页面打开网址 |
+| 删除管理 | 支持删除不再需要的地址 |
+
+实现位置：
+
+- `src/shared/addressNavigation/storage.ts`
+- `src/popup/main.tsx`
+
 #### 待办事项
 
 待办事项用于记录轻量任务，支持弹窗与侧边栏使用。
@@ -197,6 +215,7 @@ Toolbooox 的设计原则是本地优先。
 | Cookie 捕获结果 | `chrome.storage.session` 优先 | 会话级暂存，浏览器会话结束后清理 |
 | 文本比较状态 | `chrome.storage.local` | 保存左右文本和比较状态，便于打开 Options |
 | 计算器状态 | `chrome.storage.local` | 保存表达式、结果、中文描述、最近 10 次记录 |
+| 地址导航 | `chrome.storage.local` | 保存标题、网址和备注 |
 | 待办事项 | `chrome.storage.local` | 保存待办列表 |
 | 菜单设置 | `chrome.storage.local` | 保存显隐、排序、最后激活功能 |
 | 语言设置 | `chrome.storage.local` | 保存插件界面语言 |
@@ -250,6 +269,7 @@ Toolbooox 的设计原则是本地优先。
 │   ├── popup/               # 插件弹窗主应用
 │   ├── sidepanel/           # Chrome Side Panel 页面
 │   └── shared/
+│       ├── addressNavigation/ # 地址导航存储和 URL 校验
 │       ├── calculator/      # 计算器解析、精确计算、状态存储
 │       ├── chrome/          # Chrome API 辅助封装
 │       ├── devTools/        # 域名替换逻辑
@@ -304,6 +324,7 @@ npm run preview  # 预览构建产物
 - Cookie 捕获 URL 匹配、Cookie header 解析。
 - 文本比较行级 diff、字符级 diff、变更块应用。
 - 计算器精确小数、大整数、除法链式计算、百分号、正负切换、中文读法。
+- 地址导航 URL 校验、协议补全、保存和删除。
 - 待办事项新增、更新、删除、完成状态。
 
 发布前建议至少执行：
@@ -345,6 +366,7 @@ Current features:
 - Cookie Viewer
 - Text Compare
 - Calculator
+- Address Navigation
 - Todo Items
 - Configurable menu
 - Options page for long text comparison
@@ -395,6 +417,13 @@ Toolbooox does not provide cloud sync and does not upload passwords, cookies, te
 - Shows Chinese result descriptions when the integer part has more than 3 digits.
 - Persists expression/result state and keeps the latest 10 calculation history items in Side Panel.
 
+#### Address Navigation
+
+- Stores frequently used website entries with title, URL, and remark.
+- Validates website URLs before saving and only accepts `http/https`.
+- Completes `example.com` to `https://example.com/`.
+- Opens saved websites in a new page from the popup.
+
 #### Todo Items
 
 - Stores todo items locally.
@@ -412,6 +441,7 @@ Toolbooox does not provide cloud sync and does not upload passwords, cookies, te
 | Captured Cookie header | `chrome.storage.session` when available |
 | Text compare state | `chrome.storage.local` |
 | Calculator state/history | `chrome.storage.local` |
+| Address navigation items | `chrome.storage.local` |
 | Todo items | `chrome.storage.local` |
 | Menu and locale settings | `chrome.storage.local` |
 

@@ -10,6 +10,17 @@ type Messages = {
   readonly cancel: string;
   readonly accountCopied: string;
   readonly actions: string;
+  readonly addressDeleted: string;
+  readonly addressInvalidUrl: string;
+  readonly addressNavigation: string;
+  readonly addressRemark: string;
+  readonly addressRemarkPlaceholder: string;
+  readonly addressSaved: string;
+  readonly addressTitle: string;
+  readonly addressTitlePlaceholder: string;
+  readonly addressUrlCopied: string;
+  readonly addressWebsite: string;
+  readonly addressWebsitePlaceholder: string;
   readonly all: string;
   readonly calculator: string;
   readonly calculatorExpression: string;
@@ -86,6 +97,7 @@ type Messages = {
   readonly nextPage: string;
   readonly noActiveSite: string;
   readonly noActiveSiteHelp: string;
+  readonly noAddressItems: string;
   readonly noMatch: string;
   readonly noDomainRules: string;
   readonly noCookies: string;
@@ -100,6 +112,7 @@ type Messages = {
   readonly openLongTextCompareConfirm: string;
   readonly openSidePanel: string;
   readonly openSidePanelDemo: string;
+  readonly openWebsite: string;
   readonly pageStatus: (currentPage: number, totalPages: number) => string;
   readonly password: string;
   readonly passwordCopied: string;
@@ -176,6 +189,17 @@ export const messages: Record<Locale, Messages> = {
     cancel: "取消",
     accountCopied: "账号已复制。",
     actions: "操作",
+    addressDeleted: "地址已删除。",
+    addressInvalidUrl: "网址不对，请重新检查。",
+    addressNavigation: "地址导航",
+    addressRemark: "备注",
+    addressRemarkPlaceholder: "补充用途、账号或访问说明",
+    addressSaved: "地址已保存。",
+    addressTitle: "标题",
+    addressTitlePlaceholder: "例如：项目文档",
+    addressUrlCopied: "网址已复制。",
+    addressWebsite: "网站",
+    addressWebsitePlaceholder: "https://example.com",
     all: "全部",
     calculator: "计算器",
     calculatorExpression: "表达式",
@@ -253,6 +277,7 @@ export const messages: Record<Locale, Messages> = {
     nextPage: "下一页",
     noActiveSite: "未检测到当前网站",
     noActiveSiteHelp: "在网站页面打开插件后，会自动匹配已保存账号。",
+    noAddressItems: "还没有保存地址。",
     noMatch: "当前网站没有匹配账号。",
     noDomainRules: "还没有保存域名规则。",
     noCookies: "还没有捕获到该接口请求携带的 Cookie。",
@@ -267,6 +292,7 @@ export const messages: Record<Locale, Messages> = {
     openLongTextCompareConfirm: "当前文本超过 10 行，更适合使用长文本对比。是否打开长文本对比？",
     openSidePanel: "打开侧边栏",
     openSidePanelDemo: "打开侧边栏 Demo",
+    openWebsite: "打开网站",
     pageStatus: (currentPage, totalPages) => `${currentPage} / ${totalPages}`,
     password: "密码",
     passwordCopied: "密码已复制。",
@@ -341,6 +367,17 @@ export const messages: Record<Locale, Messages> = {
     cancel: "Cancel",
     accountCopied: "Account copied.",
     actions: "Actions",
+    addressDeleted: "Address deleted.",
+    addressInvalidUrl: "The URL is invalid. Please check it again.",
+    addressNavigation: "Address Navigation",
+    addressRemark: "Remark",
+    addressRemarkPlaceholder: "Add usage notes, account hints, or access details",
+    addressSaved: "Address saved.",
+    addressTitle: "Title",
+    addressTitlePlaceholder: "e.g. Project Docs",
+    addressUrlCopied: "URL copied.",
+    addressWebsite: "Website",
+    addressWebsitePlaceholder: "https://example.com",
     all: "All",
     calculator: "Calculator",
     calculatorExpression: "Expression",
@@ -418,6 +455,7 @@ export const messages: Record<Locale, Messages> = {
     nextPage: "Next",
     noActiveSite: "No active site detected",
     noActiveSiteHelp: "Open this popup on a website to match saved accounts.",
+    noAddressItems: "No saved addresses yet.",
     noMatch: "No account matches the current website.",
     noDomainRules: "No saved domain rules yet.",
     noCookies: "No cookies have been captured from this API request yet.",
@@ -432,6 +470,7 @@ export const messages: Record<Locale, Messages> = {
     openLongTextCompareConfirm: "The current text is over 10 lines and is better suited for Long Text Compare. Open it now?",
     openSidePanel: "Open Side Panel",
     openSidePanelDemo: "Open Side Panel Demo",
+    openWebsite: "Open Website",
     pageStatus: (currentPage, totalPages) => `${currentPage} / ${totalPages}`,
     password: "Password",
     passwordCopied: "Password copied.",

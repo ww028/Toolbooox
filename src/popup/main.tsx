@@ -15,6 +15,14 @@ import {
 } from "../shared/chrome/cookies";
 import { getActiveTabInfo, type ActiveTabInfo, updateActiveTabUrl } from "../shared/chrome/tabs";
 import {
+  deleteAddressNavigationItem,
+  getAddressNavigationItems,
+  isValidAddressNavigationUrl,
+  saveAddressNavigationItem,
+  type AddressNavigationDraft,
+  type AddressNavigationItem
+} from "../shared/addressNavigation/storage";
+import {
   evaluateCalculatorExpression,
   formatCalculatorChineseDescription,
   formatCalculatorResult,
@@ -88,6 +96,7 @@ const PRIMARY_TOOL_KEYS = [
   "cookieViewer",
   "textCompare",
   "calculator",
+  "addressNavigator",
   "todoItems"
 ] as const;
 
@@ -106,6 +115,7 @@ type PendingAction =
   | "saveDomainRule"
   | "switchDomain"
   | "saveCookieRequestUrl"
+  | "saveAddressNavigation"
   | "saveTodo"
   | null;
 
@@ -124,6 +134,12 @@ const emptyDomainSwitcherDraft: DomainSwitcherDraft = {
 const emptyTodoDraft: TodoDraft = {
   title: "",
   content: ""
+};
+
+const emptyAddressNavigationDraft: AddressNavigationDraft = {
+  title: "",
+  remark: "",
+  url: ""
 };
 
 const PASSWORD_PAGE_SIZE = 10;
@@ -146,6 +162,7 @@ function isToolKey(value: unknown): value is ToolKey {
     value === "cookieViewer" ||
     value === "textCompare" ||
     value === "calculator" ||
+    value === "addressNavigator" ||
     value === "todoItems" ||
     value === "settings"
   );
@@ -359,9 +376,12 @@ function PopupApp() {
   const [activeTool, setActiveTool] = useState<ToolKey>("passwordManager");
   const [menuSettings, setMenuSettings] = useState<MenuSettings>(defaultMenuSettings);
   const [entries, setEntries] = useState<PasswordEntry[]>([]);
+  const [addressNavigationItems, setAddressNavigationItems] = useState<AddressNavigationItem[]>([]);
   const [todoItems, setTodoItems] = useState<TodoItem[]>([]);
   const [activeTab, setActiveTab] = useState<ActiveTabInfo | null>(null);
   const [formState, setFormState] = useState<FormState>(emptyForm);
+  const [addressNavigationDraft, setAddressNavigationDraft] =
+    useState<AddressNavigationDraft>(emptyAddressNavigationDraft);
   const [todoDraft, setTodoDraft] = useState<TodoDraft>(emptyTodoDraft);
   const [domainSwitcherDraft, setDomainSwitcherDraft] =
     useState<DomainSwitcherDraft>(emptyDomainSwitcherDraft);
@@ -376,8 +396,10 @@ function PopupApp() {
   const [calculatorResultDescription, setCalculatorResultDescription] = useState("");
   const [selectedDomainRuleId, setSelectedDomainRuleId] = useState<string | null>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
+  const [editingAddressNavigationId, setEditingAddressNavigationId] = useState<string | null>(null);
   const [editingTodoId, setEditingTodoId] = useState<string | null>(null);
   const [isFormOpen, setIsFormOpen] = useState(false);
+  const [isAddressNavigationFormOpen, setIsAddressNavigationFormOpen] = useState(false);
   const [isTodoFormOpen, setIsTodoFormOpen] = useState(false);
   const [savedEntriesTab, setSavedEntriesTab] = useState<SavedEntriesTab>("otherSites");
   const [savedEntriesPage, setSavedEntriesPage] = useState(1);
@@ -408,6 +430,7 @@ function PopupApp() {
       setCalculatorResultDescription(savedState.resultDescription);
     });
     void getPasswordEntries().then(setEntries);
+    void getAddressNavigationItems().then(setAddressNavigationItems);
     void getTodoItems().then(setTodoItems);
     void getDomainSwitcherRules().then((rules) => {
       setDomainSwitcherRules(rules);
@@ -652,6 +675,85 @@ function PopupApp() {
       rightText: nextRightText,
       hasCompared: true
     });
+  };
+
+  const handleAddressNavigationDraftChange =
+    (field: keyof AddressNavigationDraft) =>
+    (event: ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
+      setAddressNavigationDraft((currentDraft) => ({
+        ...currentDraft,
+        [field]: event.target.value
+      }));
+    };
+
+  const resetAddressNavigationForm = () => {
+    setEditingAddressNavigationId(null);
+    setIsAddressNavigationFormOpen(false);
+    setAddressNavigationDraft(emptyAddressNavigationDraft);
+  };
+
+  const handleAddAddressNavigation = () => {
+    setEditingAddressNavigationId(null);
+    setIsAddressNavigationFormOpen(true);
+    setAddressNavigationDraft(emptyAddressNavigationDraft);
+  };
+
+  const handleSaveAddressNavigation = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+
+    if (pendingAction === "saveAddressNavigation") {
+      return;
+    }
+
+    if (!isValidAddressNavigationUrl(addressNavigationDraft.url)) {
+      setMessage(t.addressInvalidUrl);
+      return;
+    }
+
+    setPendingAction("saveAddressNavigation");
+
+    try {
+      const nextItems = await saveAddressNavigationItem(
+        addressNavigationItems,
+        addressNavigationDraft,
+        editingAddressNavigationId
+      );
+      setAddressNavigationItems(nextItems);
+      resetAddressNavigationForm();
+      setMessage(t.addressSaved);
+    } catch {
+      setMessage(t.addressInvalidUrl);
+    } finally {
+      setPendingAction(null);
+    }
+  };
+
+  const handleOpenAddressNavigationItem = (item: AddressNavigationItem) => {
+    window.open(item.url, "_blank", "noopener,noreferrer");
+  };
+
+  const handleCopyAddressNavigationUrl = async (item: AddressNavigationItem) => {
+    await handleCopy(item.url, t.addressUrlCopied);
+  };
+
+  const handleEditAddressNavigationItem = (item: AddressNavigationItem) => {
+    setEditingAddressNavigationId(item.id);
+    setIsAddressNavigationFormOpen(true);
+    setAddressNavigationDraft({
+      title: item.title,
+      remark: item.remark,
+      url: item.url
+    });
+  };
+
+  const handleDeleteAddressNavigationItem = async (item: AddressNavigationItem) => {
+    const nextItems = await deleteAddressNavigationItem(addressNavigationItems, item.id);
+    setAddressNavigationItems(nextItems);
+    setMessage(t.addressDeleted);
+
+    if (editingAddressNavigationId === item.id) {
+      resetAddressNavigationForm();
+    }
   };
 
   const updateCalculatorState = (
@@ -1033,6 +1135,8 @@ function PopupApp() {
         return t.textCompare;
       case "calculator":
         return t.calculator;
+      case "addressNavigator":
+        return t.addressNavigation;
       case "todoItems":
         return t.todoItems;
     }
@@ -1832,6 +1936,175 @@ function PopupApp() {
                   </button>
                 </div>
               </div>
+            </section>
+          </section>
+          ) : activeTool === "addressNavigator" ? (
+          <section className="feature-panel" aria-label={t.addressNavigation}>
+            <div className="feature-header">
+              <div>
+                <h2>{t.addressNavigation}</h2>
+              </div>
+              <div className="feature-actions">
+                <button className="primary-action" type="button" onClick={handleAddAddressNavigation}>
+                  {t.add}
+                </button>
+              </div>
+            </div>
+
+            {isAddressNavigationFormOpen && !editingAddressNavigationId ? (
+              <form className="developer-form" onSubmit={handleSaveAddressNavigation}>
+                <div className="section-heading">
+                  <h3>{t.add}</h3>
+                  <button
+                    className="text-button"
+                    disabled={pendingAction === "saveAddressNavigation"}
+                    type="button"
+                    onClick={resetAddressNavigationForm}
+                  >
+                    {t.cancel}
+                  </button>
+                </div>
+                <label>
+                  {t.addressTitle}
+                  <input
+                    autoComplete="off"
+                    placeholder={t.addressTitlePlaceholder}
+                    required
+                    value={addressNavigationDraft.title}
+                    onChange={handleAddressNavigationDraftChange("title")}
+                  />
+                </label>
+                <label>
+                  {t.addressWebsite}
+                  <textarea
+                    placeholder={t.addressWebsitePlaceholder}
+                    required
+                    value={addressNavigationDraft.url}
+                    onChange={handleAddressNavigationDraftChange("url")}
+                  />
+                </label>
+                <label>
+                  {t.addressRemark}
+                  <textarea
+                    placeholder={t.addressRemarkPlaceholder}
+                    value={addressNavigationDraft.remark}
+                    onChange={handleAddressNavigationDraftChange("remark")}
+                  />
+                </label>
+                <button
+                  className="primary-button"
+                  disabled={pendingAction === "saveAddressNavigation"}
+                  type="submit"
+                >
+                  {t.save}
+                </button>
+              </form>
+            ) : null}
+
+            <section className="entry-list" aria-label={t.addressNavigation}>
+              {addressNavigationItems.length > 0 ? (
+                <div className="address-navigation-list" role="list">
+                  {addressNavigationItems.map((item) => (
+                    editingAddressNavigationId === item.id ? (
+                      <form
+                        className="developer-form address-navigation-inline-form"
+                        key={item.id}
+                        role="listitem"
+                        onSubmit={handleSaveAddressNavigation}
+                      >
+                        <div className="section-heading">
+                          <h3>{t.edit}</h3>
+                          <button
+                            className="text-button"
+                            disabled={pendingAction === "saveAddressNavigation"}
+                            type="button"
+                            onClick={resetAddressNavigationForm}
+                          >
+                            {t.cancel}
+                          </button>
+                        </div>
+                        <label>
+                          {t.addressTitle}
+                          <input
+                            autoComplete="off"
+                            placeholder={t.addressTitlePlaceholder}
+                            required
+                            value={addressNavigationDraft.title}
+                            onChange={handleAddressNavigationDraftChange("title")}
+                          />
+                        </label>
+                        <label>
+                          {t.addressWebsite}
+                          <textarea
+                            placeholder={t.addressWebsitePlaceholder}
+                            required
+                            value={addressNavigationDraft.url}
+                            onChange={handleAddressNavigationDraftChange("url")}
+                          />
+                        </label>
+                        <label>
+                          {t.addressRemark}
+                          <textarea
+                            placeholder={t.addressRemarkPlaceholder}
+                            value={addressNavigationDraft.remark}
+                            onChange={handleAddressNavigationDraftChange("remark")}
+                          />
+                        </label>
+                        <button
+                          className="primary-button"
+                          disabled={pendingAction === "saveAddressNavigation"}
+                          type="submit"
+                        >
+                          {t.saveChanges}
+                        </button>
+                      </form>
+                    ) : (
+                      <article className="address-navigation-item" key={item.id} role="listitem">
+                        <div className="address-navigation-content">
+                          <button
+                            className="address-navigation-title"
+                            title={item.url}
+                            type="button"
+                            onClick={() => handleOpenAddressNavigationItem(item)}
+                          >
+                            {item.title}
+                          </button>
+                          <button
+                            className="address-navigation-url"
+                            title={item.url}
+                            type="button"
+                            onClick={() => handleOpenAddressNavigationItem(item)}
+                          >
+                            {item.url}
+                          </button>
+                          {item.remark ? <p>{item.remark}</p> : null}
+                        </div>
+                        <div className="row-actions">
+                          <button type="button" onClick={() => handleOpenAddressNavigationItem(item)}>
+                            {t.openWebsite}
+                          </button>
+                          <button type="button" onClick={() => handleCopyAddressNavigationUrl(item)}>
+                            {t.copy}
+                          </button>
+                          <button type="button" onClick={() => handleEditAddressNavigationItem(item)}>
+                            {t.edit}
+                          </button>
+                          <button type="button" onClick={() => handleDeleteAddressNavigationItem(item)}>
+                            {t.delete}
+                          </button>
+                        </div>
+                      </article>
+                    )
+                  ))}
+                </div>
+              ) : (
+                <div className="empty-state">
+                  <p>{t.noAddressItems}</p>
+                  <button className="text-button" type="button" onClick={handleAddAddressNavigation}>
+                    {t.add}
+                  </button>
+                </div>
+              )}
             </section>
           </section>
           ) : activeTool === "todoItems" ? (
