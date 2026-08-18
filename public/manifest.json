@@ -9,10 +9,13 @@
     "default_popup": "popup.html"
   },
   "options_page": "options.html",
+  "side_panel": {
+    "default_path": "sidepanel.html"
+  },
   "background": {
     "service_worker": "background.js",
     "type": "module"
   },
-  "permissions": ["storage", "activeTab", "cookies", "webRequest"],
+  "permissions": ["storage", "activeTab", "cookies", "webRequest", "sidePanel"],
   "host_permissions": ["<all_urls>"]
 }

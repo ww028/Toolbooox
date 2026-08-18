@@ -15,6 +15,18 @@ import {
 } from "../shared/chrome/cookies";
 import { getActiveTabInfo, type ActiveTabInfo, updateActiveTabUrl } from "../shared/chrome/tabs";
 import {
+  evaluateCalculatorExpression,
+  formatCalculatorChineseDescription,
+  formatCalculatorResult,
+  percentCurrentCalculatorNumber,
+  toggleCurrentCalculatorNumberSign
+} from "../shared/calculator/evaluate";
+import {
+  appendCalculatorHistoryItem,
+  getSavedCalculatorState,
+  saveCalculatorState
+} from "../shared/calculator/storage";
+import {
   buildSwitchedDomainUrl,
   deleteDomainSwitcherRule,
   getDomainSwitcherRules,
@@ -51,6 +63,15 @@ import {
   getSavedTextCompareState,
   saveTextCompareState
 } from "../shared/textCompare/storage";
+import { CLOSE_SIDE_PANEL_MESSAGE_TYPE } from "../shared/sidePanel/messages";
+import {
+  deleteTodoItem,
+  getTodoItems,
+  saveTodoItem,
+  updateTodoCompleted,
+  type TodoDraft,
+  type TodoItem
+} from "../shared/todos/storage";
 import manifest from "../../public/manifest.json";
 import "./styles.css";
 
@@ -66,7 +87,8 @@ const PRIMARY_TOOL_KEYS = [
   "domainSwitcher",
   "cookieViewer",
   "textCompare",
-  "calculator"
+  "calculator",
+  "todoItems"
 ] as const;
 
 type PrimaryToolKey = (typeof PRIMARY_TOOL_KEYS)[number];
@@ -75,7 +97,7 @@ type MenuSettings = {
   readonly order: PrimaryToolKey[];
   readonly hidden: PrimaryToolKey[];
 };
-type CalculatorToken = number | "+" | "-" | "*" | "/" | "(" | ")";
+type SidePanelToolKey = "calculator" | "todoItems";
 type SavedEntriesTab = "otherSites" | "all";
 type PendingAction =
   | "save"
@@ -84,6 +106,7 @@ type PendingAction =
   | "saveDomainRule"
   | "switchDomain"
   | "saveCookieRequestUrl"
+  | "saveTodo"
   | null;
 
 const emptyForm: FormState = {
@@ -96,6 +119,11 @@ const emptyForm: FormState = {
 const emptyDomainSwitcherDraft: DomainSwitcherDraft = {
   onlineDomain: "",
   localDomain: ""
+};
+
+const emptyTodoDraft: TodoDraft = {
+  title: "",
+  content: ""
 };
 
 const PASSWORD_PAGE_SIZE = 10;
@@ -118,6 +146,7 @@ function isToolKey(value: unknown): value is ToolKey {
     value === "cookieViewer" ||
     value === "textCompare" ||
     value === "calculator" ||
+    value === "todoItems" ||
     value === "settings"
   );
 }
@@ -278,180 +307,51 @@ function getVaultErrorMessage(error: unknown, t: (typeof messages)[Locale]): str
   return "";
 }
 
-function isCalculatorOperator(token: CalculatorToken): token is "+" | "-" | "*" | "/" {
-  return token === "+" || token === "-" || token === "*" || token === "/";
-}
-
-function getCalculatorPrecedence(operator: "+" | "-" | "*" | "/"): number {
-  return operator === "+" || operator === "-" ? 1 : 2;
-}
-
-function tokenizeCalculatorExpression(expression: string): CalculatorToken[] {
-  const tokens: CalculatorToken[] = [];
-  const normalizedExpression = expression.replace(/[×]/g, "*").replace(/[÷]/g, "/");
-  let index = 0;
-
-  while (index < normalizedExpression.length) {
-    const character = normalizedExpression[index];
-
-    if (/\s/.test(character)) {
-      index += 1;
-      continue;
-    }
-
-    const previousToken = tokens[tokens.length - 1];
-    const isUnaryMinus =
-      character === "-" &&
-      (!previousToken || previousToken === "(" || isCalculatorOperator(previousToken));
-
-    if (isUnaryMinus && normalizedExpression[index + 1] === "(") {
-      tokens.push(0, "-");
-      index += 1;
-      continue;
-    }
-
-    if (/\d|\./.test(character) || isUnaryMinus) {
-      let numberText = isUnaryMinus ? "-" : "";
-      let dotCount = 0;
-
-      if (isUnaryMinus) {
-        index += 1;
-      }
-
-      while (index < normalizedExpression.length && /[\d.]/.test(normalizedExpression[index])) {
-        if (normalizedExpression[index] === ".") {
-          dotCount += 1;
-        }
-
-        numberText += normalizedExpression[index];
-        index += 1;
-      }
-
-      const value = Number(numberText);
-
-      if (dotCount > 1 || !Number.isFinite(value)) {
-        throw new Error("INVALID_EXPRESSION");
-      }
-
-      tokens.push(value);
-      continue;
-    }
-
-    if (character === "+" || character === "-" || character === "*" || character === "/") {
-      tokens.push(character);
-      index += 1;
-      continue;
-    }
-
-    if (character === "(" || character === ")") {
-      tokens.push(character);
-      index += 1;
-      continue;
-    }
-
-    throw new Error("INVALID_EXPRESSION");
-  }
-
-  return tokens;
-}
-
-function evaluateCalculatorExpression(expression: string): number {
-  const tokens = tokenizeCalculatorExpression(expression);
-  const outputQueue: (number | "+" | "-" | "*" | "/")[] = [];
-  const operatorStack: ("+" | "-" | "*" | "/" | "(")[] = [];
-
-  tokens.forEach((token) => {
-    if (typeof token === "number") {
-      outputQueue.push(token);
-      return;
-    }
-
-    if (isCalculatorOperator(token)) {
-      while (operatorStack.length > 0) {
-        const topOperator = operatorStack[operatorStack.length - 1];
-
-        if (
-          topOperator === "(" ||
-          getCalculatorPrecedence(topOperator) < getCalculatorPrecedence(token)
-        ) {
-          break;
-        }
-
-        outputQueue.push(operatorStack.pop() as "+" | "-" | "*" | "/");
-      }
-
-      operatorStack.push(token);
-      return;
-    }
-
-    if (token === "(") {
-      operatorStack.push(token);
-      return;
-    }
-
-    while (operatorStack.length > 0 && operatorStack[operatorStack.length - 1] !== "(") {
-      outputQueue.push(operatorStack.pop() as "+" | "-" | "*" | "/");
-    }
-
-    if (operatorStack.pop() !== "(") {
-      throw new Error("INVALID_EXPRESSION");
-    }
-  });
-
-  while (operatorStack.length > 0) {
-    const operator = operatorStack.pop();
-
-    if (!operator || operator === "(") {
-      throw new Error("INVALID_EXPRESSION");
-    }
-
-    outputQueue.push(operator);
-  }
-
-  const valueStack: number[] = [];
-
-  outputQueue.forEach((token) => {
-    if (typeof token === "number") {
-      valueStack.push(token);
-      return;
-    }
-
-    const rightValue = valueStack.pop();
-    const leftValue = valueStack.pop();
-
-    if (leftValue === undefined || rightValue === undefined) {
-      throw new Error("INVALID_EXPRESSION");
-    }
-
-    const nextValue =
-      token === "+"
-        ? leftValue + rightValue
-        : token === "-"
-          ? leftValue - rightValue
-          : token === "*"
-            ? leftValue * rightValue
-            : leftValue / rightValue;
-
-    if (!Number.isFinite(nextValue)) {
-      throw new Error("INVALID_EXPRESSION");
-    }
-
-    valueStack.push(nextValue);
-  });
-
-  if (valueStack.length !== 1) {
-    throw new Error("INVALID_EXPRESSION");
-  }
-
-  return valueStack[0];
-}
-
-function formatCalculatorResult(value: number): string {
-  return Number.isInteger(value) ? String(value) : String(Number(value.toFixed(10)));
-}
-
 function getComparableLineCount(text: string): number {
   return text.length > 0 ? text.split(/\r\n|\n|\r/).length : 0;
+}
+
+function padDatePart(value: number): string {
+  return String(value).padStart(2, "0");
+}
+
+function formatTodoDateTime(value: string): string {
+  const date = new Date(value);
+
+  if (Number.isNaN(date.getTime())) {
+    return "";
+  }
+
+  return [
+    `${date.getFullYear()}-${padDatePart(date.getMonth() + 1)}-${padDatePart(date.getDate())}`,
+    `${padDatePart(date.getHours())}:${padDatePart(date.getMinutes())}:${padDatePart(date.getSeconds())}`
+  ].join(" ");
+}
+
+function getElapsedTodoDays(value: string): number {
+  const createdAt = new Date(value).getTime();
+
+  if (Number.isNaN(createdAt)) {
+    return 0;
+  }
+
+  return Math.max(0, Math.floor((Date.now() - createdAt) / 86_400_000));
+}
+
+function requestSidePanelClose(): void {
+  if (typeof chrome === "undefined" || !chrome.runtime?.sendMessage) {
+    return;
+  }
+
+  try {
+    const result = chrome.runtime.sendMessage({ type: CLOSE_SIDE_PANEL_MESSAGE_TYPE });
+
+    if (result && typeof result.catch === "function") {
+      void result.catch(() => undefined);
+    }
+  } catch {
+    // Side panel may not be open; this is only a best-effort close signal.
+  }
 }
 
 function PopupApp() {
@@ -459,8 +359,10 @@ function PopupApp() {
   const [activeTool, setActiveTool] = useState<ToolKey>("passwordManager");
   const [menuSettings, setMenuSettings] = useState<MenuSettings>(defaultMenuSettings);
   const [entries, setEntries] = useState<PasswordEntry[]>([]);
+  const [todoItems, setTodoItems] = useState<TodoItem[]>([]);
   const [activeTab, setActiveTab] = useState<ActiveTabInfo | null>(null);
   const [formState, setFormState] = useState<FormState>(emptyForm);
+  const [todoDraft, setTodoDraft] = useState<TodoDraft>(emptyTodoDraft);
   const [domainSwitcherDraft, setDomainSwitcherDraft] =
     useState<DomainSwitcherDraft>(emptyDomainSwitcherDraft);
   const [domainSwitcherRules, setDomainSwitcherRules] = useState<DomainSwitcherRule[]>([]);
@@ -471,9 +373,12 @@ function PopupApp() {
   const [textDiffLines, setTextDiffLines] = useState<TextDiffLine[] | null>(null);
   const [calculatorExpression, setCalculatorExpression] = useState("");
   const [calculatorResult, setCalculatorResult] = useState("");
+  const [calculatorResultDescription, setCalculatorResultDescription] = useState("");
   const [selectedDomainRuleId, setSelectedDomainRuleId] = useState<string | null>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
+  const [editingTodoId, setEditingTodoId] = useState<string | null>(null);
   const [isFormOpen, setIsFormOpen] = useState(false);
+  const [isTodoFormOpen, setIsTodoFormOpen] = useState(false);
   const [savedEntriesTab, setSavedEntriesTab] = useState<SavedEntriesTab>("otherSites");
   const [savedEntriesPage, setSavedEntriesPage] = useState(1);
   const [visiblePasswords, setVisiblePasswords] = useState<ReadonlySet<string>>(new Set());
@@ -485,6 +390,7 @@ function PopupApp() {
   const isActionPending = pendingAction !== null || pendingDeleteId !== null;
 
   useEffect(() => {
+    requestSidePanelClose();
     void getSavedLocale().then(setLocale);
     void getSavedActiveTool().then(setActiveTool);
     void getSavedMenuSettings().then(setMenuSettings);
@@ -496,7 +402,13 @@ function PopupApp() {
         setTextDiffLines(createTextDiff(savedState.leftText, savedState.rightText));
       }
     });
+    void getSavedCalculatorState().then((savedState) => {
+      setCalculatorExpression(savedState.expression);
+      setCalculatorResult(savedState.result);
+      setCalculatorResultDescription(savedState.resultDescription);
+    });
     void getPasswordEntries().then(setEntries);
+    void getTodoItems().then(setTodoItems);
     void getDomainSwitcherRules().then((rules) => {
       setDomainSwitcherRules(rules);
     });
@@ -660,6 +572,15 @@ function PopupApp() {
       }));
     };
 
+  const handleTodoDraftChange =
+    (field: keyof TodoDraft) =>
+    (event: ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
+      setTodoDraft((currentDraft) => ({
+        ...currentDraft,
+        [field]: event.target.value
+      }));
+    };
+
   const handleDomainSwitcherInputChange =
     (field: keyof DomainSwitcherDraft) => (event: ChangeEvent<HTMLInputElement>) => {
       setDomainSwitcherDraft((currentConfig) => ({
@@ -733,36 +654,84 @@ function PopupApp() {
     });
   };
 
+  const updateCalculatorState = (
+    expression: string,
+    result = "",
+    resultDescription = ""
+  ) => {
+    setCalculatorExpression(expression);
+    setCalculatorResult(result);
+    setCalculatorResultDescription(resultDescription);
+    void saveCalculatorState({ expression, result, resultDescription });
+  };
+
   const handleCalculatorExpressionChange = (event: ChangeEvent<HTMLInputElement>) => {
-    setCalculatorExpression(event.target.value);
-    setCalculatorResult("");
+    updateCalculatorState(event.target.value);
   };
 
   const handleAppendCalculatorValue = (value: string) => {
-    setCalculatorExpression((currentExpression) => `${currentExpression}${value}`);
+    setCalculatorExpression((currentExpression) => {
+      const nextExpression = `${currentExpression}${value}`;
+      void saveCalculatorState({ expression: nextExpression, result: "", resultDescription: "" });
+      return nextExpression;
+    });
     setCalculatorResult("");
+    setCalculatorResultDescription("");
   };
 
   const handleClearCalculator = () => {
-    setCalculatorExpression("");
-    setCalculatorResult("");
+    updateCalculatorState("");
   };
 
   const handleBackspaceCalculator = () => {
-    setCalculatorExpression((currentExpression) => currentExpression.slice(0, -1));
+    setCalculatorExpression((currentExpression) => {
+      const nextExpression = currentExpression.slice(0, -1);
+      void saveCalculatorState({ expression: nextExpression, result: "", resultDescription: "" });
+      return nextExpression;
+    });
     setCalculatorResult("");
+    setCalculatorResultDescription("");
+  };
+
+  const handlePercentCalculator = () => {
+    setCalculatorExpression((currentExpression) => {
+      const nextExpression = percentCurrentCalculatorNumber(currentExpression);
+      void saveCalculatorState({ expression: nextExpression, result: "", resultDescription: "" });
+      return nextExpression;
+    });
+    setCalculatorResult("");
+    setCalculatorResultDescription("");
+  };
+
+  const handleToggleCalculatorSign = () => {
+    setCalculatorExpression((currentExpression) => {
+      const nextExpression = toggleCurrentCalculatorNumberSign(currentExpression);
+      void saveCalculatorState({ expression: nextExpression, result: "", resultDescription: "" });
+      return nextExpression;
+    });
+    setCalculatorResult("");
+    setCalculatorResultDescription("");
   };
 
   const handleCalculate = () => {
     if (!calculatorExpression.trim()) {
-      setCalculatorResult("");
+      updateCalculatorState(calculatorExpression);
       return;
     }
 
     try {
-      setCalculatorResult(formatCalculatorResult(evaluateCalculatorExpression(calculatorExpression)));
+      const result = evaluateCalculatorExpression(calculatorExpression);
+      const formattedResult = formatCalculatorResult(result);
+      const resultDescription = formatCalculatorChineseDescription(result);
+      setCalculatorResult(formattedResult);
+      setCalculatorResultDescription(resultDescription);
+      void appendCalculatorHistoryItem({
+        expression: calculatorExpression,
+        result: formattedResult,
+        resultDescription
+      });
     } catch {
-      setCalculatorResult(t.calculatorInvalid);
+      updateCalculatorState(calculatorExpression, t.calculatorInvalid);
     }
   };
 
@@ -777,6 +746,79 @@ function PopupApp() {
       event.preventDefault();
       handleClearCalculator();
     }
+  };
+
+  const resetTodoForm = () => {
+    setEditingTodoId(null);
+    setIsTodoFormOpen(false);
+    setTodoDraft(emptyTodoDraft);
+  };
+
+  const handleAddTodo = () => {
+    setEditingTodoId(null);
+    setIsTodoFormOpen(true);
+    setTodoDraft(emptyTodoDraft);
+  };
+
+  const handleSubmitTodo = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+
+    if (pendingAction === "saveTodo") {
+      return;
+    }
+
+    if (!todoDraft.title.trim()) {
+      setMessage(t.todoRequired);
+      return;
+    }
+
+    setPendingAction("saveTodo");
+
+    try {
+      const isEditing = Boolean(editingTodoId);
+      const nextItems = await saveTodoItem(todoItems, todoDraft, editingTodoId);
+      setTodoItems(nextItems);
+      setMessage(isEditing ? t.todoUpdated : t.todoSaved);
+      resetTodoForm();
+    } finally {
+      setPendingAction(null);
+    }
+  };
+
+  const handleEditTodo = (todoItem: TodoItem) => {
+    setEditingTodoId(todoItem.id);
+    setIsTodoFormOpen(true);
+    setTodoDraft({
+      title: todoItem.title,
+      content: todoItem.content
+    });
+  };
+
+  const handleDeleteTodo = async (todoItem: TodoItem) => {
+    if (!window.confirm(t.todoDeleteConfirm(todoItem.title))) {
+      return;
+    }
+
+    const nextItems = await deleteTodoItem(todoItems, todoItem.id);
+    setTodoItems(nextItems);
+    setMessage(t.todoDeleted);
+
+    if (editingTodoId === todoItem.id) {
+      resetTodoForm();
+    }
+  };
+
+  const handleToggleTodoCompleted = async (todoItem: TodoItem, completed: boolean) => {
+    const confirmMessage = completed
+      ? t.todoCompleteConfirm(todoItem.title)
+      : t.todoReopenConfirm(todoItem.title);
+
+    if (!window.confirm(confirmMessage)) {
+      return;
+    }
+
+    const nextItems = await updateTodoCompleted(todoItems, todoItem.id, completed);
+    setTodoItems(nextItems);
   };
 
   const resetForm = () => {
@@ -946,6 +988,39 @@ function PopupApp() {
     window.open(optionsUrl, "_blank", "noopener,noreferrer");
   };
 
+  const handleOpenSidePanelDemo = async (
+    shouldClosePopup = false,
+    sidePanelToolKey: SidePanelToolKey = "todoItems"
+  ) => {
+    if (shouldClosePopup) {
+      await saveActiveTool(sidePanelToolKey);
+    }
+
+    if (typeof chrome === "undefined" || !chrome.sidePanel?.open) {
+      window.open("/sidepanel.html", "_blank", "noopener,noreferrer");
+      if (shouldClosePopup) {
+        window.close();
+      }
+      return;
+    }
+
+    try {
+      const tabId = activeTab?.id;
+
+      if (typeof tabId === "number") {
+        await chrome.sidePanel.open({ tabId });
+        if (shouldClosePopup) {
+          window.close();
+        }
+        return;
+      }
+
+      setMessage(t.sidePanelOpenFailed);
+    } catch {
+      setMessage(t.sidePanelOpenFailed);
+    }
+  };
+
   const getPrimaryToolLabel = (toolKey: PrimaryToolKey): string => {
     switch (toolKey) {
       case "passwordManager":
@@ -958,6 +1033,8 @@ function PopupApp() {
         return t.textCompare;
       case "calculator":
         return t.calculator;
+      case "todoItems":
+        return t.todoItems;
     }
   };
 
@@ -1270,6 +1347,11 @@ function PopupApp() {
       ? capturedCookieHeader
       : null;
   const requestCookies = parseCookieHeader(visibleCapturedCookieHeader?.cookieHeader ?? "");
+  const completedTodoCount = useMemo(
+    () => todoItems.filter((todoItem) => todoItem.completed).length,
+    [todoItems]
+  );
+  const pendingTodoCount = todoItems.length - completedTodoCount;
   const textDiffBlocks = useMemo(
     () => (textDiffLines ? createTextDiffBlocks(textDiffLines) : []),
     [textDiffLines]
@@ -1690,8 +1772,16 @@ function PopupApp() {
           <section className="feature-panel" aria-label={t.calculator}>
             <div className="feature-header">
               <div>
-                <p className="eyebrow">{t.frontendDeveloperTools}</p>
                 <h2>{t.calculator}</h2>
+              </div>
+              <div className="feature-actions">
+                <button
+                  className="text-button"
+                  type="button"
+                  onClick={() => handleOpenSidePanelDemo(true, "calculator")}
+                >
+                  {t.openSidePanel}
+                </button>
               </div>
             </div>
 
@@ -1710,28 +1800,29 @@ function PopupApp() {
                   />
                 </label>
                 <div className="calculator-result" aria-live="polite">
-                  <span>{t.calculatorResult}</span>
                   <strong>{calculatorResult || "0"}</strong>
+                  {calculatorResultDescription ? (
+                    <p className="calculator-result-description">{calculatorResultDescription}</p>
+                  ) : null}
                 </div>
                 <div className="calculator-keypad" aria-label={t.calculator}>
-                  <button type="button" onClick={handleClearCalculator}>C</button>
                   <button type="button" onClick={handleBackspaceCalculator}>⌫</button>
-                  <button type="button" onClick={() => handleAppendCalculatorValue("(")}>(</button>
-                  <button type="button" onClick={() => handleAppendCalculatorValue(")")}>
-                    )
-                  </button>
+                  <button type="button" onClick={handleClearCalculator}>AC</button>
+                  <button type="button" onClick={handlePercentCalculator}>%</button>
+                  <button type="button" onClick={() => handleAppendCalculatorValue("/")}>÷</button>
                   <button type="button" onClick={() => handleAppendCalculatorValue("7")}>7</button>
                   <button type="button" onClick={() => handleAppendCalculatorValue("8")}>8</button>
                   <button type="button" onClick={() => handleAppendCalculatorValue("9")}>9</button>
-                  <button type="button" onClick={() => handleAppendCalculatorValue("/")}>÷</button>
+                  <button type="button" onClick={() => handleAppendCalculatorValue("*")}>×</button>
                   <button type="button" onClick={() => handleAppendCalculatorValue("4")}>4</button>
                   <button type="button" onClick={() => handleAppendCalculatorValue("5")}>5</button>
                   <button type="button" onClick={() => handleAppendCalculatorValue("6")}>6</button>
-                  <button type="button" onClick={() => handleAppendCalculatorValue("*")}>×</button>
+                  <button type="button" onClick={() => handleAppendCalculatorValue("-")}>-</button>
                   <button type="button" onClick={() => handleAppendCalculatorValue("1")}>1</button>
                   <button type="button" onClick={() => handleAppendCalculatorValue("2")}>2</button>
                   <button type="button" onClick={() => handleAppendCalculatorValue("3")}>3</button>
-                  <button type="button" onClick={() => handleAppendCalculatorValue("-")}>-</button>
+                  <button type="button" onClick={() => handleAppendCalculatorValue("+")}>+</button>
+                  <button type="button" onClick={handleToggleCalculatorSign}>+/-</button>
                   <button type="button" onClick={() => handleAppendCalculatorValue("0")}>0</button>
                   <button type="button" onClick={() => handleAppendCalculatorValue(".")}>.</button>
                   <button
@@ -1741,9 +1832,183 @@ function PopupApp() {
                   >
                     =
                   </button>
-                  <button type="button" onClick={() => handleAppendCalculatorValue("+")}>+</button>
                 </div>
               </div>
+            </section>
+          </section>
+          ) : activeTool === "todoItems" ? (
+          <section className="feature-panel" aria-label={t.todoItems}>
+            <div className="feature-header">
+              <div>
+                <h2>{t.todoItems}</h2>
+              </div>
+              <div className="feature-actions">
+                <button
+                  className="text-button"
+                  type="button"
+                  onClick={() => handleOpenSidePanelDemo(true)}
+                >
+                  {t.openSidePanel}
+                </button>
+                <button className="primary-action" type="button" onClick={handleAddTodo}>
+                  {t.add}
+                </button>
+              </div>
+            </div>
+
+            <section className="todo-summary" aria-label={t.todoItems}>
+              <div>
+                <span>{t.todoStatsPending}</span>
+                <strong>{pendingTodoCount}</strong>
+              </div>
+              <div>
+                <span>{t.todoStatsCompleted}</span>
+                <strong>{completedTodoCount}</strong>
+              </div>
+              <div>
+                <span>{t.todoStatsTotal}</span>
+                <strong>{todoItems.length}</strong>
+              </div>
+            </section>
+
+            {isTodoFormOpen && !editingTodoId ? (
+              <form className="developer-form" onSubmit={handleSubmitTodo}>
+                <div className="section-heading">
+                  <h3>{t.add}</h3>
+                  <button
+                    className="text-button"
+                    disabled={pendingAction === "saveTodo"}
+                    type="button"
+                    onClick={resetTodoForm}
+                  >
+                    {t.cancel}
+                  </button>
+                </div>
+                <label>
+                  {t.todoTitle}
+                  <input
+                    autoComplete="off"
+                    placeholder={t.todoTitlePlaceholder}
+                    required
+                    value={todoDraft.title}
+                    onChange={handleTodoDraftChange("title")}
+                  />
+                </label>
+                <label>
+                  {t.todoContent}
+                  <textarea
+                    className="todo-content-input"
+                    placeholder={t.todoContentPlaceholder}
+                    value={todoDraft.content}
+                    onChange={handleTodoDraftChange("content")}
+                  />
+                </label>
+                <button
+                  className="primary-button"
+                  disabled={pendingAction === "saveTodo"}
+                  type="submit"
+                >
+                  {t.save}
+                </button>
+              </form>
+            ) : null}
+
+            <section className="entry-list" aria-label={t.todoItems}>
+              {todoItems.length > 0 ? (
+                <div className="todo-list" role="list">
+                  {todoItems.map((todoItem) => (
+                    editingTodoId === todoItem.id ? (
+                      <form
+                        className="developer-form todo-inline-form"
+                        key={todoItem.id}
+                        role="listitem"
+                        onSubmit={handleSubmitTodo}
+                      >
+                        <div className="section-heading">
+                          <h3>{t.edit}</h3>
+                          <button
+                            className="text-button"
+                            disabled={pendingAction === "saveTodo"}
+                            type="button"
+                            onClick={resetTodoForm}
+                          >
+                            {t.cancel}
+                          </button>
+                        </div>
+                        <label>
+                          {t.todoTitle}
+                          <input
+                            autoComplete="off"
+                            placeholder={t.todoTitlePlaceholder}
+                            required
+                            value={todoDraft.title}
+                            onChange={handleTodoDraftChange("title")}
+                          />
+                        </label>
+                        <label>
+                          {t.todoContent}
+                          <textarea
+                            className="todo-content-input"
+                            placeholder={t.todoContentPlaceholder}
+                            value={todoDraft.content}
+                            onChange={handleTodoDraftChange("content")}
+                          />
+                        </label>
+                        <button
+                          className="primary-button"
+                          disabled={pendingAction === "saveTodo"}
+                          type="submit"
+                        >
+                          {t.saveChanges}
+                        </button>
+                      </form>
+                    ) : (
+                      <article
+                        className={`todo-item${todoItem.completed ? " todo-item-completed" : ""}`}
+                        key={todoItem.id}
+                        role="listitem"
+                      >
+                        <label className="todo-title-row">
+                          <input
+                            checked={todoItem.completed}
+                            type="checkbox"
+                            onChange={(event) =>
+                              handleToggleTodoCompleted(todoItem, event.target.checked)
+                            }
+                          />
+                          <span title={todoItem.title}>{todoItem.title}</span>
+                        </label>
+                        {todoItem.content ? (
+                          <TodoContent
+                            collapseLabel={t.collapse}
+                            content={todoItem.content}
+                            expandLabel={t.expand}
+                          />
+                        ) : null}
+                        <p className="todo-meta">
+                          {t.todoCreatedAt}: {formatTodoDateTime(todoItem.createdAt)}
+                          <span>{t.todoElapsedDays(getElapsedTodoDays(todoItem.createdAt))}</span>
+                        </p>
+                        <div className="row-actions">
+                          <button type="button" onClick={() => handleEditTodo(todoItem)}>
+                            {t.edit}
+                          </button>
+                          <button type="button" onClick={() => handleDeleteTodo(todoItem)}>
+                            {t.delete}
+                          </button>
+                        </div>
+                      </article>
+                    )
+                  ))}
+                </div>
+              ) : (
+                <div className="empty-state">
+                  <p>{t.noTodos}</p>
+                  <button className="text-button" type="button" onClick={handleAddTodo}>
+                    {t.add}
+                  </button>
+                </div>
+              )}
             </section>
           </section>
           ) : activeTool === "textCompare" ? (
@@ -1858,6 +2123,15 @@ function PopupApp() {
               <div>
                 <h2>{t.settings}</h2>
                 <p className="version-label">{t.version}: {manifest.version}</p>
+              </div>
+              <div className="feature-actions">
+                <button
+                  className="text-button"
+                  type="button"
+                  onClick={() => handleOpenSidePanelDemo(false)}
+                >
+                  {t.openSidePanelDemo}
+                </button>
               </div>
             </div>
 
@@ -2062,6 +2336,51 @@ type PasswordEntryTableProps = {
   readonly onTogglePassword: (id: string) => void;
   readonly t: (typeof messages)[Locale];
 };
+
+type TodoContentProps = {
+  readonly collapseLabel: string;
+  readonly content: string;
+  readonly expandLabel: string;
+};
+
+function TodoContent({ collapseLabel, content, expandLabel }: TodoContentProps) {
+  const contentRef = useRef<HTMLParagraphElement | null>(null);
+  const [isExpanded, setIsExpanded] = useState(false);
+  const [isOverflowing, setIsOverflowing] = useState(false);
+
+  useEffect(() => {
+    const contentElement = contentRef.current;
+
+    if (!contentElement) {
+      return;
+    }
+
+    setIsExpanded(false);
+    window.requestAnimationFrame(() => {
+      setIsOverflowing(contentElement.scrollHeight > contentElement.clientHeight + 1);
+    });
+  }, [content]);
+
+  return (
+    <div className="todo-content">
+      <p
+        className={isExpanded ? "todo-content-text" : "todo-content-text todo-content-collapsed"}
+        ref={contentRef}
+      >
+        {content}
+      </p>
+      {isOverflowing || isExpanded ? (
+        <button
+          className="todo-content-toggle"
+          type="button"
+          onClick={() => setIsExpanded((currentValue) => !currentValue)}
+        >
+          {isExpanded ? collapseLabel : expandLabel}
+        </button>
+      ) : null}
+    </div>
+  );
+}
 
 function PasswordEntryTable({
   entries,

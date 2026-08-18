@@ -10,7 +10,8 @@ export default defineConfig({
       input: {
         background: "src/background/main.ts",
         options: "options.html",
-        popup: "popup.html"
+        popup: "popup.html",
+        sidepanel: "sidepanel.html"
       },
       output: {
         entryFileNames: (chunkInfo) =>

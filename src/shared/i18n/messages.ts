@@ -15,10 +15,12 @@ type Messages = {
   readonly calculatorExpression: string;
   readonly calculatorHelp: string;
   readonly calculatorInvalid: string;
+  readonly calculatorHistory: string;
   readonly calculatorPlaceholder: string;
   readonly calculatorResult: string;
   readonly changedText: string;
   readonly clear: string;
+  readonly closeSidePanel: string;
   readonly collapseUnchangedLines: (lineCount: number) => string;
   readonly compareText: string;
   readonly cookieViewer: string;
@@ -87,6 +89,7 @@ type Messages = {
   readonly noMatch: string;
   readonly noDomainRules: string;
   readonly noCookies: string;
+  readonly noCalculatorHistory: string;
   readonly noPasswords: string;
   readonly noTextDiff: string;
   readonly noOtherSitePasswords: string;
@@ -95,6 +98,8 @@ type Messages = {
   readonly onlineDomain: string;
   readonly onlineDomainPlaceholder: string;
   readonly openLongTextCompareConfirm: string;
+  readonly openSidePanel: string;
+  readonly openSidePanelDemo: string;
   readonly pageStatus: (currentPage: number, totalPages: number) => string;
   readonly password: string;
   readonly passwordCopied: string;
@@ -122,6 +127,9 @@ type Messages = {
   readonly selected: string;
   readonly settings: string;
   readonly show: string;
+  readonly sidePanelDemo: string;
+  readonly sidePanelDemoHelp: string;
+  readonly sidePanelOpenFailed: string;
   readonly saveRequestUrl: string;
   readonly switchDomain: string;
   readonly switchToLocalDomain: string;
@@ -130,6 +138,26 @@ type Messages = {
   readonly textCompareEmpty: string;
   readonly textCompareHelp: string;
   readonly textCompareResult: string;
+  readonly todoContent: string;
+  readonly todoContentPlaceholder: string;
+  readonly todoCompleteConfirm: (title: string) => string;
+  readonly todoDeleted: string;
+  readonly todoDeleteConfirm: (title: string) => string;
+  readonly todoElapsedDays: (dayCount: number) => string;
+  readonly todoItems: string;
+  readonly todoRequired: string;
+  readonly todoReopenConfirm: (title: string) => string;
+  readonly todoSaved: string;
+  readonly todoStatsCompleted: string;
+  readonly todoStatsPending: string;
+  readonly todoStatsTotal: string;
+  readonly todoTitle: string;
+  readonly todoTitlePlaceholder: string;
+  readonly todoUpdated: string;
+  readonly todoCreatedAt: string;
+  readonly expand: string;
+  readonly collapse: string;
+  readonly noTodos: string;
   readonly updated: string;
   readonly url: string;
   readonly usernamePlaceholder: string;
@@ -152,11 +180,13 @@ export const messages: Record<Locale, Messages> = {
     calculator: "计算器",
     calculatorExpression: "表达式",
     calculatorHelp: "支持四则运算、小数、括号和负数，可直接输入表达式或点击按钮计算。",
+    calculatorHistory: "最近计算",
     calculatorInvalid: "表达式无效",
     calculatorPlaceholder: "例如：1+2*(3-4)",
     calculatorResult: "结果",
     changedText: "修改后文本",
     clear: "清空",
+    closeSidePanel: "关闭侧边栏",
     collapseUnchangedLines: (lineCount) => `收起 ${lineCount} 行相同内容`,
     compareText: "比较",
     cookieViewer: "查看 Cookie",
@@ -226,6 +256,7 @@ export const messages: Record<Locale, Messages> = {
     noMatch: "当前网站没有匹配账号。",
     noDomainRules: "还没有保存域名规则。",
     noCookies: "还没有捕获到该接口请求携带的 Cookie。",
+    noCalculatorHistory: "暂无计算记录。",
     noPasswords: "还没有保存密码。",
     noTextDiff: "两侧文本没有差异。",
     noOtherSitePasswords: "没有其他网站账号。",
@@ -234,6 +265,8 @@ export const messages: Record<Locale, Messages> = {
     onlineDomain: "线上域名",
     onlineDomainPlaceholder: "www.example.test",
     openLongTextCompareConfirm: "当前文本超过 10 行，更适合使用长文本对比。是否打开长文本对比？",
+    openSidePanel: "打开侧边栏",
+    openSidePanelDemo: "打开侧边栏 Demo",
     pageStatus: (currentPage, totalPages) => `${currentPage} / ${totalPages}`,
     password: "密码",
     passwordCopied: "密码已复制。",
@@ -261,6 +294,9 @@ export const messages: Record<Locale, Messages> = {
     selected: "已选中",
     settings: "设置",
     show: "显示",
+    sidePanelDemo: "侧边栏 Demo",
+    sidePanelDemoHelp: "这是 Chrome Side Panel 的最小演示页面，适合放置需要持续查看或频繁操作的工具。",
+    sidePanelOpenFailed: "侧边栏打开失败，请确认已重新加载扩展并使用支持 Side Panel 的 Chrome 版本。",
     saveRequestUrl: "保存接口地址",
     switchDomain: "切换域名",
     switchToLocalDomain: "切换为本地",
@@ -269,6 +305,26 @@ export const messages: Record<Locale, Messages> = {
     textCompareEmpty: "输入左右两侧文本后点击比较。",
     textCompareHelp: "在左右输入框中分别粘贴文本，点击比较后可查看差异，也可像 Git 一样采用左侧或右侧变更。",
     textCompareResult: "比较结果",
+    todoContent: "内容",
+    todoContentPlaceholder: "补充待办事项的详细内容",
+    todoCompleteConfirm: (title) => `确定将「${title}」标记为已办结吗？`,
+    todoDeleted: "待办事项已删除。",
+    todoDeleteConfirm: (title) => `确定删除「${title}」吗？`,
+    todoElapsedDays: (dayCount) => `已进行 ${dayCount} 天`,
+    todoItems: "待办事项",
+    todoRequired: "请填写待办事项标题。",
+    todoReopenConfirm: (title) => `确定重新打开「${title}」吗？`,
+    todoSaved: "待办事项已保存。",
+    todoStatsCompleted: "已办结",
+    todoStatsPending: "待办",
+    todoStatsTotal: "总计",
+    todoTitle: "标题",
+    todoTitlePlaceholder: "请输入待办事项标题",
+    todoUpdated: "待办事项已更新。",
+    todoCreatedAt: "创建时间",
+    expand: "展开",
+    collapse: "收起",
+    noTodos: "还没有待办事项。",
     updated: "密码已更新到本地。",
     url: "网址",
     usernamePlaceholder: "请输入账号",
@@ -289,11 +345,13 @@ export const messages: Record<Locale, Messages> = {
     calculator: "Calculator",
     calculatorExpression: "Expression",
     calculatorHelp: "Supports arithmetic, decimals, parentheses, and negative numbers. Type an expression or use the buttons.",
+    calculatorHistory: "Recent Calculations",
     calculatorInvalid: "Invalid expression",
     calculatorPlaceholder: "e.g. 1+2*(3-4)",
     calculatorResult: "Result",
     changedText: "Changed Text",
     clear: "Clear",
+    closeSidePanel: "Close Side Panel",
     collapseUnchangedLines: (lineCount) => `Collapse ${lineCount} unchanged lines`,
     compareText: "Compare",
     cookieViewer: "View Cookie",
@@ -363,6 +421,7 @@ export const messages: Record<Locale, Messages> = {
     noMatch: "No account matches the current website.",
     noDomainRules: "No saved domain rules yet.",
     noCookies: "No cookies have been captured from this API request yet.",
+    noCalculatorHistory: "No calculation history yet.",
     noPasswords: "No passwords saved yet.",
     noTextDiff: "No differences found.",
     noOtherSitePasswords: "No accounts for other sites.",
@@ -371,6 +430,8 @@ export const messages: Record<Locale, Messages> = {
     onlineDomain: "Online domain",
     onlineDomainPlaceholder: "www.example.test",
     openLongTextCompareConfirm: "The current text is over 10 lines and is better suited for Long Text Compare. Open it now?",
+    openSidePanel: "Open Side Panel",
+    openSidePanelDemo: "Open Side Panel Demo",
     pageStatus: (currentPage, totalPages) => `${currentPage} / ${totalPages}`,
     password: "Password",
     passwordCopied: "Password copied.",
@@ -398,6 +459,9 @@ export const messages: Record<Locale, Messages> = {
     selected: "Selected",
     settings: "Settings",
     show: "Show",
+    sidePanelDemo: "Side Panel Demo",
+    sidePanelDemoHelp: "This is a minimal Chrome Side Panel demo for tools that should stay visible while you browse.",
+    sidePanelOpenFailed: "Failed to open the side panel. Reload the extension and use a Chrome version that supports Side Panel.",
     saveRequestUrl: "Save API URL",
     switchDomain: "Switch Domain",
     switchToLocalDomain: "Switch to Local",
@@ -406,6 +470,26 @@ export const messages: Record<Locale, Messages> = {
     textCompareEmpty: "Enter text on both sides, then click Compare.",
     textCompareHelp: "Paste text into the left and right inputs. Review differences and accept left or right changes like a Git merge.",
     textCompareResult: "Compare Result",
+    todoContent: "Content",
+    todoContentPlaceholder: "Add details for this todo item",
+    todoCompleteConfirm: (title) => `Mark "${title}" as done?`,
+    todoDeleted: "Todo deleted.",
+    todoDeleteConfirm: (title) => `Delete "${title}"?`,
+    todoElapsedDays: (dayCount) => `${dayCount} day(s) elapsed`,
+    todoItems: "Todo Items",
+    todoRequired: "Enter a todo title.",
+    todoReopenConfirm: (title) => `Reopen "${title}"?`,
+    todoSaved: "Todo saved.",
+    todoStatsCompleted: "Done",
+    todoStatsPending: "Todo",
+    todoStatsTotal: "Total",
+    todoTitle: "Title",
+    todoTitlePlaceholder: "Enter todo title",
+    todoUpdated: "Todo updated.",
+    todoCreatedAt: "Created",
+    expand: "Expand",
+    collapse: "Collapse",
+    noTodos: "No todo items yet.",
     updated: "Password updated locally.",
     url: "URL",
     usernamePlaceholder: "Enter account",

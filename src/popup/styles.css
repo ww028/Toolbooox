@@ -381,7 +381,8 @@ h3 {
 
 .developer-form input,
 .cookie-request-form input,
-.password-form input {
+.password-form input,
+.developer-form textarea {
   width: 100%;
   border: 1px solid var(--border);
   border-radius: 8px;
@@ -395,9 +396,16 @@ h3 {
 
 .developer-form input:focus,
 .cookie-request-form input:focus,
-.password-form input:focus {
+.password-form input:focus,
+.developer-form textarea:focus {
   border-color: var(--accent);
   box-shadow: 0 0 0 3px rgba(15, 111, 159, 0.14);
+}
+
+.developer-form textarea {
+  min-height: 92px;
+  resize: vertical;
+  line-height: 1.5;
 }
 
 .cookie-request-form {
@@ -439,21 +447,14 @@ h3 {
 }
 
 .calculator-result {
-  display: flex;
+  display: grid;
   min-height: 44px;
   align-items: center;
-  justify-content: space-between;
   gap: 12px;
   border: 1px solid rgba(202, 215, 229, 0.58);
   border-radius: 8px;
   background: rgba(238, 244, 250, 0.5);
   padding: 10px 12px;
-}
-
-.calculator-result span {
-  color: #64778d;
-  font-size: 12px;
-  font-weight: 700;
 }
 
 .calculator-result strong {
@@ -464,7 +465,19 @@ h3 {
     "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
   font-size: 18px;
   line-height: 1.2;
-  text-align: right;
+  text-align: left;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.calculator-result-description {
+  grid-column: 1 / -1;
+  min-width: 0;
+  overflow: hidden;
+  color: #64778d;
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1.35;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -787,6 +800,154 @@ h3 {
   font-size: 12px;
   font-weight: 700;
   line-height: 1;
+}
+
+.todo-summary {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.todo-summary div {
+  display: grid;
+  gap: 5px;
+  border: 1px solid rgba(248, 251, 254, 0.82);
+  border-radius: 8px;
+  background: var(--glass);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.92),
+    var(--shadow-tight);
+  padding: 10px;
+}
+
+.todo-summary span {
+  min-width: 0;
+  overflow: hidden;
+  color: #64778d;
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1.2;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.todo-summary strong {
+  color: #121b2a;
+  font-size: 20px;
+  line-height: 1;
+}
+
+.todo-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+  overflow: visible;
+}
+
+.todo-item {
+  display: grid;
+  gap: 8px;
+  border: 1px solid rgba(248, 251, 254, 0.86);
+  border-radius: 8px;
+  background: rgba(248, 251, 254, 0.74);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.92),
+    var(--shadow-tight);
+  padding: 12px;
+}
+
+.todo-item + .todo-item {
+  border-top: 1px solid rgba(248, 251, 254, 0.86);
+}
+
+.todo-title-row {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 9px;
+  color: #202b3a;
+  font-size: 14px;
+  font-weight: 800;
+  line-height: 1.35;
+}
+
+.todo-title-row input {
+  width: 16px;
+  height: 16px;
+  flex: 0 0 auto;
+  accent-color: var(--accent);
+}
+
+.todo-title-row span {
+  min-width: 0;
+  display: -webkit-box;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  overflow-wrap: anywhere;
+}
+
+.todo-content {
+  display: grid;
+  gap: 4px;
+}
+
+.todo-content-text {
+  overflow-wrap: anywhere;
+  color: #64778d;
+  font-size: 14px;
+  line-height: 1.55;
+}
+
+.todo-content-collapsed {
+  display: -webkit-box;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+}
+
+.todo-content-toggle {
+  justify-self: start;
+  border: 0;
+  background: transparent;
+  color: var(--accent);
+  padding: 0;
+  font-size: 12px;
+  font-weight: 800;
+  line-height: 1.3;
+}
+
+.todo-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  border-top: 1px solid rgba(202, 215, 229, 0.36);
+  padding-top: 8px;
+  overflow-wrap: anywhere;
+  color: #64778d;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.todo-item .row-actions {
+  justify-content: flex-start;
+  gap: 6px;
+}
+
+.todo-item .row-actions button {
+  height: 28px;
+  padding: 0 9px;
+}
+
+.todo-item-completed .todo-title-row span,
+.todo-item-completed .todo-content-text {
+  color: #7b8da3;
+  text-decoration: line-through;
 }
 
 .tool-note {
