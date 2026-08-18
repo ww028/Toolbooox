@@ -239,7 +239,15 @@ h1 {
 }
 
 .feature-header {
+  position: sticky;
+  top: -16px;
+  z-index: 10;
   align-items: center;
+  border-bottom: 1px solid rgba(202, 215, 229, 0.48);
+  background: rgba(232, 239, 247, 0.94);
+  backdrop-filter: blur(18px) saturate(1.25);
+  margin: -16px -16px 0;
+  padding: 16px 16px 10px;
 }
 
 .feature-actions {

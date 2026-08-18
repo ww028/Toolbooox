@@ -408,6 +408,7 @@ function PopupApp() {
   const [pendingAction, setPendingAction] = useState<PendingAction>(null);
   const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null);
   const formRef = useRef<HTMLFormElement | null>(null);
+  const featureMainRef = useRef<HTMLElement | null>(null);
   const t = messages[locale];
   const isActionPending = pendingAction !== null || pendingDeleteId !== null;
 
@@ -686,6 +687,13 @@ function PopupApp() {
       }));
     };
 
+  const scrollFeatureMainToTop = () => {
+    featureMainRef.current?.scrollTo({
+      top: 0,
+      behavior: "auto"
+    });
+  };
+
   const resetAddressNavigationForm = () => {
     setEditingAddressNavigationId(null);
     setIsAddressNavigationFormOpen(false);
@@ -693,6 +701,7 @@ function PopupApp() {
   };
 
   const handleAddAddressNavigation = () => {
+    scrollFeatureMainToTop();
     setEditingAddressNavigationId(null);
     setIsAddressNavigationFormOpen(true);
     setAddressNavigationDraft(emptyAddressNavigationDraft);
@@ -713,6 +722,7 @@ function PopupApp() {
     setPendingAction("saveAddressNavigation");
 
     try {
+      const isEditing = Boolean(editingAddressNavigationId);
       const nextItems = await saveAddressNavigationItem(
         addressNavigationItems,
         addressNavigationDraft,
@@ -721,6 +731,9 @@ function PopupApp() {
       setAddressNavigationItems(nextItems);
       resetAddressNavigationForm();
       setMessage(t.addressSaved);
+      if (!isEditing) {
+        scrollFeatureMainToTop();
+      }
     } catch {
       setMessage(t.addressInvalidUrl);
     } finally {
@@ -857,6 +870,7 @@ function PopupApp() {
   };
 
   const handleAddTodo = () => {
+    scrollFeatureMainToTop();
     setEditingTodoId(null);
     setIsTodoFormOpen(true);
     setTodoDraft(emptyTodoDraft);
@@ -882,6 +896,9 @@ function PopupApp() {
       setTodoItems(nextItems);
       setMessage(isEditing ? t.todoUpdated : t.todoSaved);
       resetTodoForm();
+      if (!isEditing) {
+        scrollFeatureMainToTop();
+      }
     } finally {
       setPendingAction(null);
     }
@@ -933,6 +950,7 @@ function PopupApp() {
   };
 
   const handleAdd = () => {
+    scrollFeatureMainToTop();
     setEditingId(null);
     setIsFormOpen(true);
     setFormState({
@@ -962,6 +980,7 @@ function PopupApp() {
       setMessage(isEditing ? t.updated : t.saved);
       if (!isEditing) {
         setSavedEntriesPage(1);
+        scrollFeatureMainToTop();
       }
       resetForm();
     } catch (error) {
@@ -1541,7 +1560,7 @@ function PopupApp() {
           </button>
         </aside>
 
-        <main className="feature-main">
+        <main className="feature-main" ref={featureMainRef}>
           {message ? <p className="toast" role="status">{message}</p> : null}
 
           {activeTool === "passwordManager" ? (
