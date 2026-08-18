@@ -1,5 +1,5 @@
 import { StrictMode, useEffect, useMemo, useRef, useState } from "react";
-import type { ChangeEvent, FormEvent } from "react";
+import type { ChangeEvent, FormEvent, KeyboardEvent } from "react";
 import { createRoot } from "react-dom/client";
 import {
   clearCapturedCookieHeader,
@@ -40,6 +40,17 @@ import type {
 } from "../shared/passwordVault/types";
 import { getPaginatedItems, getTotalPages } from "../shared/passwordVault/pagination";
 import { getHostname, isSameOrSubdomain } from "../shared/passwordVault/urlMatcher";
+import {
+  applyTextDiffBlockChange,
+  createTextDiff,
+  createTextDiffBlocks,
+  type TextDiffBlock,
+  type TextDiffLine
+} from "../shared/textCompare/diff";
+import {
+  getSavedTextCompareState,
+  saveTextCompareState
+} from "../shared/textCompare/storage";
 import manifest from "../../public/manifest.json";
 import "./styles.css";
 
@@ -50,7 +61,13 @@ type FormState = {
   readonly password: string;
 };
 
-const PRIMARY_TOOL_KEYS = ["passwordManager", "domainSwitcher", "cookieViewer"] as const;
+const PRIMARY_TOOL_KEYS = [
+  "passwordManager",
+  "domainSwitcher",
+  "cookieViewer",
+  "textCompare",
+  "calculator"
+] as const;
 
 type PrimaryToolKey = (typeof PRIMARY_TOOL_KEYS)[number];
 type ToolKey = PrimaryToolKey | "settings";
@@ -58,6 +75,7 @@ type MenuSettings = {
   readonly order: PrimaryToolKey[];
   readonly hidden: PrimaryToolKey[];
 };
+type CalculatorToken = number | "+" | "-" | "*" | "/" | "(" | ")";
 type SavedEntriesTab = "otherSites" | "all";
 type PendingAction =
   | "save"
@@ -83,12 +101,12 @@ const emptyDomainSwitcherDraft: DomainSwitcherDraft = {
 const PASSWORD_PAGE_SIZE = 10;
 const ACTIVE_TOOL_STORAGE_KEY = "toolbooox.activeTool";
 const MENU_SETTINGS_STORAGE_KEY = "toolbooox.menuSettings";
+const LONG_TEXT_COMPARE_LINE_THRESHOLD = 10;
 const DEFAULT_LOCAL_DOMAIN = "localhost:";
 const defaultMenuSettings: MenuSettings = {
   order: [...PRIMARY_TOOL_KEYS],
   hidden: []
 };
-
 function hasChromeStorage(): boolean {
   return typeof chrome !== "undefined" && Boolean(chrome.storage?.local);
 }
@@ -98,6 +116,8 @@ function isToolKey(value: unknown): value is ToolKey {
     value === "passwordManager" ||
     value === "domainSwitcher" ||
     value === "cookieViewer" ||
+    value === "textCompare" ||
+    value === "calculator" ||
     value === "settings"
   );
 }
@@ -258,6 +278,182 @@ function getVaultErrorMessage(error: unknown, t: (typeof messages)[Locale]): str
   return "";
 }
 
+function isCalculatorOperator(token: CalculatorToken): token is "+" | "-" | "*" | "/" {
+  return token === "+" || token === "-" || token === "*" || token === "/";
+}
+
+function getCalculatorPrecedence(operator: "+" | "-" | "*" | "/"): number {
+  return operator === "+" || operator === "-" ? 1 : 2;
+}
+
+function tokenizeCalculatorExpression(expression: string): CalculatorToken[] {
+  const tokens: CalculatorToken[] = [];
+  const normalizedExpression = expression.replace(/[×]/g, "*").replace(/[÷]/g, "/");
+  let index = 0;
+
+  while (index < normalizedExpression.length) {
+    const character = normalizedExpression[index];
+
+    if (/\s/.test(character)) {
+      index += 1;
+      continue;
+    }
+
+    const previousToken = tokens[tokens.length - 1];
+    const isUnaryMinus =
+      character === "-" &&
+      (!previousToken || previousToken === "(" || isCalculatorOperator(previousToken));
+
+    if (isUnaryMinus && normalizedExpression[index + 1] === "(") {
+      tokens.push(0, "-");
+      index += 1;
+      continue;
+    }
+
+    if (/\d|\./.test(character) || isUnaryMinus) {
+      let numberText = isUnaryMinus ? "-" : "";
+      let dotCount = 0;
+
+      if (isUnaryMinus) {
+        index += 1;
+      }
+
+      while (index < normalizedExpression.length && /[\d.]/.test(normalizedExpression[index])) {
+        if (normalizedExpression[index] === ".") {
+          dotCount += 1;
+        }
+
+        numberText += normalizedExpression[index];
+        index += 1;
+      }
+
+      const value = Number(numberText);
+
+      if (dotCount > 1 || !Number.isFinite(value)) {
+        throw new Error("INVALID_EXPRESSION");
+      }
+
+      tokens.push(value);
+      continue;
+    }
+
+    if (character === "+" || character === "-" || character === "*" || character === "/") {
+      tokens.push(character);
+      index += 1;
+      continue;
+    }
+
+    if (character === "(" || character === ")") {
+      tokens.push(character);
+      index += 1;
+      continue;
+    }
+
+    throw new Error("INVALID_EXPRESSION");
+  }
+
+  return tokens;
+}
+
+function evaluateCalculatorExpression(expression: string): number {
+  const tokens = tokenizeCalculatorExpression(expression);
+  const outputQueue: (number | "+" | "-" | "*" | "/")[] = [];
+  const operatorStack: ("+" | "-" | "*" | "/" | "(")[] = [];
+
+  tokens.forEach((token) => {
+    if (typeof token === "number") {
+      outputQueue.push(token);
+      return;
+    }
+
+    if (isCalculatorOperator(token)) {
+      while (operatorStack.length > 0) {
+        const topOperator = operatorStack[operatorStack.length - 1];
+
+        if (
+          topOperator === "(" ||
+          getCalculatorPrecedence(topOperator) < getCalculatorPrecedence(token)
+        ) {
+          break;
+        }
+
+        outputQueue.push(operatorStack.pop() as "+" | "-" | "*" | "/");
+      }
+
+      operatorStack.push(token);
+      return;
+    }
+
+    if (token === "(") {
+      operatorStack.push(token);
+      return;
+    }
+
+    while (operatorStack.length > 0 && operatorStack[operatorStack.length - 1] !== "(") {
+      outputQueue.push(operatorStack.pop() as "+" | "-" | "*" | "/");
+    }
+
+    if (operatorStack.pop() !== "(") {
+      throw new Error("INVALID_EXPRESSION");
+    }
+  });
+
+  while (operatorStack.length > 0) {
+    const operator = operatorStack.pop();
+
+    if (!operator || operator === "(") {
+      throw new Error("INVALID_EXPRESSION");
+    }
+
+    outputQueue.push(operator);
+  }
+
+  const valueStack: number[] = [];
+
+  outputQueue.forEach((token) => {
+    if (typeof token === "number") {
+      valueStack.push(token);
+      return;
+    }
+
+    const rightValue = valueStack.pop();
+    const leftValue = valueStack.pop();
+
+    if (leftValue === undefined || rightValue === undefined) {
+      throw new Error("INVALID_EXPRESSION");
+    }
+
+    const nextValue =
+      token === "+"
+        ? leftValue + rightValue
+        : token === "-"
+          ? leftValue - rightValue
+          : token === "*"
+            ? leftValue * rightValue
+            : leftValue / rightValue;
+
+    if (!Number.isFinite(nextValue)) {
+      throw new Error("INVALID_EXPRESSION");
+    }
+
+    valueStack.push(nextValue);
+  });
+
+  if (valueStack.length !== 1) {
+    throw new Error("INVALID_EXPRESSION");
+  }
+
+  return valueStack[0];
+}
+
+function formatCalculatorResult(value: number): string {
+  return Number.isInteger(value) ? String(value) : String(Number(value.toFixed(10)));
+}
+
+function getComparableLineCount(text: string): number {
+  return text.length > 0 ? text.split(/\r\n|\n|\r/).length : 0;
+}
+
 function PopupApp() {
   const [locale, setLocale] = useState<Locale>(getDefaultLocale());
   const [activeTool, setActiveTool] = useState<ToolKey>("passwordManager");
@@ -270,6 +466,11 @@ function PopupApp() {
   const [domainSwitcherRules, setDomainSwitcherRules] = useState<DomainSwitcherRule[]>([]);
   const [cookieRequestUrl, setCookieRequestUrl] = useState("");
   const [capturedCookieHeader, setCapturedCookieHeader] = useState<CapturedCookieHeader | null>(null);
+  const [leftCompareText, setLeftCompareText] = useState("");
+  const [rightCompareText, setRightCompareText] = useState("");
+  const [textDiffLines, setTextDiffLines] = useState<TextDiffLine[] | null>(null);
+  const [calculatorExpression, setCalculatorExpression] = useState("");
+  const [calculatorResult, setCalculatorResult] = useState("");
   const [selectedDomainRuleId, setSelectedDomainRuleId] = useState<string | null>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [isFormOpen, setIsFormOpen] = useState(false);
@@ -287,6 +488,14 @@ function PopupApp() {
     void getSavedLocale().then(setLocale);
     void getSavedActiveTool().then(setActiveTool);
     void getSavedMenuSettings().then(setMenuSettings);
+    void getSavedTextCompareState().then((savedState) => {
+      setLeftCompareText(savedState.leftText);
+      setRightCompareText(savedState.rightText);
+
+      if (savedState.hasCompared) {
+        setTextDiffLines(createTextDiff(savedState.leftText, savedState.rightText));
+      }
+    });
     void getPasswordEntries().then(setEntries);
     void getDomainSwitcherRules().then((rules) => {
       setDomainSwitcherRules(rules);
@@ -463,6 +672,113 @@ function PopupApp() {
     setCookieRequestUrl(event.target.value);
   };
 
+  const handleLeftCompareTextChange = (event: ChangeEvent<HTMLTextAreaElement>) => {
+    const nextLeftText = event.target.value;
+    setLeftCompareText(nextLeftText);
+    setTextDiffLines(null);
+    void saveTextCompareState({
+      leftText: nextLeftText,
+      rightText: rightCompareText,
+      hasCompared: false
+    });
+  };
+
+  const handleRightCompareTextChange = (event: ChangeEvent<HTMLTextAreaElement>) => {
+    const nextRightText = event.target.value;
+    setRightCompareText(nextRightText);
+    setTextDiffLines(null);
+    void saveTextCompareState({
+      leftText: leftCompareText,
+      rightText: nextRightText,
+      hasCompared: false
+    });
+  };
+
+  const handleCompareText = () => {
+    const shouldSuggestLongTextCompare =
+      getComparableLineCount(leftCompareText) > LONG_TEXT_COMPARE_LINE_THRESHOLD ||
+      getComparableLineCount(rightCompareText) > LONG_TEXT_COMPARE_LINE_THRESHOLD;
+
+    if (shouldSuggestLongTextCompare) {
+      if (window.confirm(t.openLongTextCompareConfirm)) {
+        void handleOpenLongTextCompare();
+      }
+      return;
+    }
+
+    setTextDiffLines(createTextDiff(leftCompareText, rightCompareText));
+    void saveTextCompareState({
+      leftText: leftCompareText,
+      rightText: rightCompareText,
+      hasCompared: true
+    });
+  };
+
+  const applyTextDiffBlock = (block: TextDiffBlock, source: "left" | "right") => {
+    const { leftText: nextLeftText, rightText: nextRightText } = applyTextDiffBlockChange(
+      leftCompareText,
+      rightCompareText,
+      block,
+      source
+    );
+    const nextDiffLines = createTextDiff(nextLeftText, nextRightText);
+
+    setLeftCompareText(nextLeftText);
+    setRightCompareText(nextRightText);
+    setTextDiffLines(nextDiffLines);
+    void saveTextCompareState({
+      leftText: nextLeftText,
+      rightText: nextRightText,
+      hasCompared: true
+    });
+  };
+
+  const handleCalculatorExpressionChange = (event: ChangeEvent<HTMLInputElement>) => {
+    setCalculatorExpression(event.target.value);
+    setCalculatorResult("");
+  };
+
+  const handleAppendCalculatorValue = (value: string) => {
+    setCalculatorExpression((currentExpression) => `${currentExpression}${value}`);
+    setCalculatorResult("");
+  };
+
+  const handleClearCalculator = () => {
+    setCalculatorExpression("");
+    setCalculatorResult("");
+  };
+
+  const handleBackspaceCalculator = () => {
+    setCalculatorExpression((currentExpression) => currentExpression.slice(0, -1));
+    setCalculatorResult("");
+  };
+
+  const handleCalculate = () => {
+    if (!calculatorExpression.trim()) {
+      setCalculatorResult("");
+      return;
+    }
+
+    try {
+      setCalculatorResult(formatCalculatorResult(evaluateCalculatorExpression(calculatorExpression)));
+    } catch {
+      setCalculatorResult(t.calculatorInvalid);
+    }
+  };
+
+  const handleCalculatorKeyDown = (event: KeyboardEvent<HTMLInputElement>) => {
+    if (event.key === "Enter") {
+      event.preventDefault();
+      handleCalculate();
+      return;
+    }
+
+    if (event.key === "Escape") {
+      event.preventDefault();
+      handleClearCalculator();
+    }
+  };
+
   const resetForm = () => {
     setEditingId(null);
     setIsFormOpen(false);
@@ -615,6 +931,21 @@ function PopupApp() {
     await saveActiveTool(nextTool);
   };
 
+  const handleOpenLongTextCompare = async () => {
+    await saveTextCompareState({
+      leftText: leftCompareText,
+      rightText: rightCompareText,
+      hasCompared: false
+    });
+
+    const optionsUrl =
+      typeof chrome !== "undefined" && chrome.runtime?.getURL
+        ? chrome.runtime.getURL("options.html")
+        : "/options.html";
+
+    window.open(optionsUrl, "_blank", "noopener,noreferrer");
+  };
+
   const getPrimaryToolLabel = (toolKey: PrimaryToolKey): string => {
     switch (toolKey) {
       case "passwordManager":
@@ -623,6 +954,10 @@ function PopupApp() {
         return t.domainSwitcher;
       case "cookieViewer":
         return t.cookieViewer;
+      case "textCompare":
+        return t.textCompare;
+      case "calculator":
+        return t.calculator;
     }
   };
 
@@ -935,6 +1270,12 @@ function PopupApp() {
       ? capturedCookieHeader
       : null;
   const requestCookies = parseCookieHeader(visibleCapturedCookieHeader?.cookieHeader ?? "");
+  const textDiffBlocks = useMemo(
+    () => (textDiffLines ? createTextDiffBlocks(textDiffLines) : []),
+    [textDiffLines]
+  );
+  const hasTextDiff =
+    textDiffBlocks.some((diffBlock) => diffBlock.type === "changed");
   const switchDomainButtonLabel =
     currentDomainSwitchResult?.source === "online"
       ? t.switchToLocalDomain
@@ -1341,6 +1682,172 @@ function PopupApp() {
               ) : (
                 <div className="empty-state">
                   <p>{t.noDomainRules}</p>
+                </div>
+              )}
+            </section>
+          </section>
+          ) : activeTool === "calculator" ? (
+          <section className="feature-panel" aria-label={t.calculator}>
+            <div className="feature-header">
+              <div>
+                <p className="eyebrow">{t.frontendDeveloperTools}</p>
+                <h2>{t.calculator}</h2>
+              </div>
+            </div>
+
+            <section className="developer-form" aria-label={t.calculator}>
+              <p className="tool-note">{t.calculatorHelp}</p>
+              <div className="calculator-panel">
+                <label className="calculator-display">
+                  {t.calculatorExpression}
+                  <input
+                    autoComplete="off"
+                    inputMode="decimal"
+                    placeholder={t.calculatorPlaceholder}
+                    value={calculatorExpression}
+                    onChange={handleCalculatorExpressionChange}
+                    onKeyDown={handleCalculatorKeyDown}
+                  />
+                </label>
+                <div className="calculator-result" aria-live="polite">
+                  <span>{t.calculatorResult}</span>
+                  <strong>{calculatorResult || "0"}</strong>
+                </div>
+                <div className="calculator-keypad" aria-label={t.calculator}>
+                  <button type="button" onClick={handleClearCalculator}>C</button>
+                  <button type="button" onClick={handleBackspaceCalculator}>⌫</button>
+                  <button type="button" onClick={() => handleAppendCalculatorValue("(")}>(</button>
+                  <button type="button" onClick={() => handleAppendCalculatorValue(")")}>
+                    )
+                  </button>
+                  <button type="button" onClick={() => handleAppendCalculatorValue("7")}>7</button>
+                  <button type="button" onClick={() => handleAppendCalculatorValue("8")}>8</button>
+                  <button type="button" onClick={() => handleAppendCalculatorValue("9")}>9</button>
+                  <button type="button" onClick={() => handleAppendCalculatorValue("/")}>÷</button>
+                  <button type="button" onClick={() => handleAppendCalculatorValue("4")}>4</button>
+                  <button type="button" onClick={() => handleAppendCalculatorValue("5")}>5</button>
+                  <button type="button" onClick={() => handleAppendCalculatorValue("6")}>6</button>
+                  <button type="button" onClick={() => handleAppendCalculatorValue("*")}>×</button>
+                  <button type="button" onClick={() => handleAppendCalculatorValue("1")}>1</button>
+                  <button type="button" onClick={() => handleAppendCalculatorValue("2")}>2</button>
+                  <button type="button" onClick={() => handleAppendCalculatorValue("3")}>3</button>
+                  <button type="button" onClick={() => handleAppendCalculatorValue("-")}>-</button>
+                  <button type="button" onClick={() => handleAppendCalculatorValue("0")}>0</button>
+                  <button type="button" onClick={() => handleAppendCalculatorValue(".")}>.</button>
+                  <button
+                    className="calculator-equals"
+                    type="button"
+                    onClick={handleCalculate}
+                  >
+                    =
+                  </button>
+                  <button type="button" onClick={() => handleAppendCalculatorValue("+")}>+</button>
+                </div>
+              </div>
+            </section>
+          </section>
+          ) : activeTool === "textCompare" ? (
+          <section className="feature-panel" aria-label={t.textCompare}>
+            <div className="feature-header">
+              <div>
+                <p className="eyebrow">{t.frontendDeveloperTools}</p>
+                <h2>{t.textCompare}</h2>
+              </div>
+              <div className="feature-actions">
+                <button className="text-button" type="button" onClick={handleOpenLongTextCompare}>
+                  {t.longTextCompare}
+                </button>
+                <button className="primary-action" type="button" onClick={handleCompareText}>
+                  {t.compareText}
+                </button>
+              </div>
+            </div>
+
+            <section className="developer-form" aria-label={t.textCompare}>
+              <p className="tool-note">{t.textCompareHelp}</p>
+              <div className="text-compare-grid">
+                <label className="text-compare-field">
+                  {t.originalText}
+                  <textarea
+                    spellCheck="false"
+                    value={leftCompareText}
+                    onChange={handleLeftCompareTextChange}
+                  />
+                </label>
+                <label className="text-compare-field">
+                  {t.changedText}
+                  <textarea
+                    spellCheck="false"
+                    value={rightCompareText}
+                    onChange={handleRightCompareTextChange}
+                  />
+                </label>
+              </div>
+            </section>
+
+            <section className="entry-list" aria-label={t.textCompareResult}>
+              <div className="section-heading">
+                <h3>{t.textCompareResult}</h3>
+              </div>
+              {textDiffLines ? (
+                <div className="diff-output" role="list">
+                  {textDiffBlocks.map((diffBlock, blockIndex) => (
+                    <div className="diff-block" key={`${diffBlock.type}-${blockIndex}`}>
+                      {diffBlock.type === "changed" ? (
+                        <div className="diff-block-actions">
+                          <button
+                            type="button"
+                            onClick={() => applyTextDiffBlock(diffBlock, "left")}
+                          >
+                            {t.acceptLeft}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => applyTextDiffBlock(diffBlock, "right")}
+                          >
+                            {t.acceptRight}
+                          </button>
+                        </div>
+                      ) : null}
+                      {diffBlock.lines.map((diffLine, lineIndex) => (
+                        <div
+                          className={`diff-line diff-line-${diffLine.type}`}
+                          key={`${diffLine.type}-${blockIndex}-${lineIndex}`}
+                          role="listitem"
+                        >
+                          <span className="diff-line-number">
+                            {diffLine.leftLineNumber ?? ""}
+                          </span>
+                          <span className="diff-line-number">
+                            {diffLine.rightLineNumber ?? ""}
+                          </span>
+                          <span className="diff-line-marker">
+                            {diffLine.type === "added"
+                              ? "+"
+                              : diffLine.type === "removed"
+                                ? "-"
+                                : " "}
+                          </span>
+                          <code>
+                            {diffLine.segments?.length
+                              ? diffLine.segments.map((segment, segmentIndex) => (
+                                  <span
+                                    className={segment.highlighted ? "diff-segment-highlight" : undefined}
+                                    key={`${segment.value}-${segmentIndex}`}
+                                  >
+                                    {segment.value}
+                                  </span>
+                                ))
+                              : diffLine.value || " "}
+                          </code>
+                        </div>
+                      ))}
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="empty-state">
+                  <p>{t.textCompareEmpty}</p>
                 </div>
               )}
             </section>

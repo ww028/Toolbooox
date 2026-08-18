@@ -20,7 +20,7 @@
 
 ### 楼主贴
 
-Toolbooox 是一个本地优先的 Chrome 浏览器插件，定位为日常可复用工具集合。当前版本包含三个核心工具：密码管理器、域名替换、查看 Cookie。所有业务数据都保存在用户自己的浏览器环境中，插件不依赖远端服务。
+Toolbooox 是一个本地优先的 Chrome 浏览器插件，定位为日常可复用工具集合。当前版本包含密码管理器、域名替换、查看 Cookie、文本比较、计算器。所有业务数据都保存在用户自己的浏览器环境中，插件不依赖远端服务。
 
 本仓库采用 MIT 协议开源，欢迎 Fork 和参与开发。
 
@@ -72,6 +72,26 @@ Toolbooox 是一个本地优先的 Chrome 浏览器插件，定位为日常可�
 | 结果展示 | 支持展示完整 Cookie header，并拆分成 Cookie 名和值列表                         |
 | 操作反馈 | 复制、保存、清空、捕获状态通过固定定位 Toast 反馈                              |
 
+#### 4 楼：文本比较
+
+| 能力         | 说明                                                             |
+| ------------ | ---------------------------------------------------------------- |
+| 左右输入     | 使用左右两栏多行文本框分别输入原始文本和修改后文本               |
+| 行级比较     | 点击比较后按行计算差异                                           |
+| Git 风格结果 | 同时展示未变更行、删除行和新增行，删除行红色高亮，新增行绿色高亮 |
+| 字符级标注   | 相邻的删除/新增行会继续高亮行内不同字符                          |
+| 采用变更     | 支持像 Git 一样对变更块选择 `采用左侧` 或 `采用右侧`             |
+| 本地处理     | 比较逻辑完全在浏览器本地运行，不上传文本内容                     |
+
+#### 5 楼：计算器
+
+| 能力       | 说明                                   |
+| ---------- | -------------------------------------- |
+| 表达式输入 | 支持直接输入表达式，也支持点击按钮输入 |
+| 基础运算   | 支持加、减、乘、除、小数、括号和负数   |
+| 键盘操作   | 支持回车计算，Esc 清空                 |
+| 本地处理   | 表达式解析和计算完全在浏览器本地运行   |
+
 ### 获取与安装
 
 | 渠道            | 适用场景                                             | 入口                                                 |
@@ -109,6 +129,21 @@ Toolbooox 是一个本地优先的 Chrome 浏览器插件，定位为日常可�
 3. 填写接口地址并保存，例如 `https://api.example.test/user/info`。
 4. 刷新页面或重新触发该接口请求。
 5. 插件会在后台捕获这个接口真实携带的 Cookie header。
+
+#### 文本比较
+
+1. 进入 `文本比较`。
+2. 在左侧输入原始文本。
+3. 在右侧输入修改后文本。
+4. 点击 `比较`。
+5. 在比较结果中查看新增、删除和行内差异，也可以对变更块选择采用左侧或右侧内容。
+
+#### 计算器
+
+1. 进入 `计算器`。
+2. 输入表达式，或点击数字和运算符按钮。
+3. 点击 `=` 或按回车计算结果。
+4. 使用 `C` 清空，使用 `⌫` 删除最后一个字符。
 
 ### 数据与隐私
 
@@ -217,7 +252,7 @@ A：域名替换和 Cookie 查看需要支持用户输入的任意站点/API 地
 
 ### Original Post
 
-Toolbooox is a local-first Chrome extension designed as a reusable everyday toolbox. The current version includes three core tools: Password Manager, Domain Switcher, and Cookie Viewer. Business data stays in the user's browser environment, and the extension does not depend on a remote service.
+Toolbooox is a local-first Chrome extension designed as a reusable everyday toolbox. The current version includes Password Manager, Domain Switcher, Cookie Viewer, Text Compare, and Calculator. Business data stays in the user's browser environment, and the extension does not depend on a remote service.
 
 This repository is open sourced under the MIT License. Forks and contributions are welcome.
 
@@ -269,6 +304,26 @@ This repository is open sourced under the MIT License. Forks and contributions a
 | Result view     | Display the full Cookie header and split it into name/value rows                                    |
 | Feedback        | Save, copy, clear, and capture states use fixed-position Toast feedback                             |
 
+#### Reply 4: Text Compare
+
+| Capability         | Description                                                                                       |
+| ------------------ | ------------------------------------------------------------------------------------------------- |
+| Side-by-side input | Enter original and changed text in two multiline inputs                                           |
+| Line diff          | Compare text line by line after clicking Compare                                                  |
+| Git-style output   | Show unchanged, removed, and added lines; highlight removed lines in red and added lines in green |
+| Inline highlights  | Adjacent removed/added lines also highlight changed characters within the line                    |
+| Accept changes     | Accept the left or right side for a changed block, similar to a Git merge                         |
+| Local processing   | Comparison runs entirely in the browser and does not upload text                                  |
+
+#### Reply 5: Calculator
+
+| Capability       | Description                                                                                           |
+| ---------------- | ----------------------------------------------------------------------------------------------------- |
+| Expression input | Type expressions directly or use calculator buttons                                                   |
+| Basic arithmetic | Supports addition, subtraction, multiplication, division, decimals, parentheses, and negative numbers |
+| Keyboard support | Press Enter to calculate and Escape to clear                                                          |
+| Local processing | Parsing and calculation run entirely in the browser                                                   |
+
 ### Get and Install
 
 | Channel          | Best for                                                                                 | Link                                                 |
@@ -306,6 +361,21 @@ Chinese guide: [Manual installation guide](docs/INSTALL.zh-CN.md).
 3. Enter and save an API URL, for example `https://api.example.test/user/info`.
 4. Refresh the page or trigger that API request again.
 5. The background listener captures the Cookie header actually attached to that API request.
+
+#### Text Compare
+
+1. Go to `Text Compare`.
+2. Enter the original text on the left.
+3. Enter the changed text on the right.
+4. Click `Compare`.
+5. Review added, removed, and inline changed content. You can also accept the left or right side for each changed block.
+
+#### Calculator
+
+1. Go to `Calculator`.
+2. Type an expression, or use the number and operator buttons.
+3. Click `=` or press Enter to calculate.
+4. Use `C` to clear and `⌫` to remove the last character.
 
 ### Data and Privacy
 

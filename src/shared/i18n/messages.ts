@@ -5,11 +5,22 @@ type Messages = {
   readonly add: string;
   readonly addFirstAccount: string;
   readonly addPassword: string;
+  readonly acceptLeft: string;
+  readonly acceptRight: string;
   readonly cancel: string;
   readonly accountCopied: string;
   readonly actions: string;
   readonly all: string;
+  readonly calculator: string;
+  readonly calculatorExpression: string;
+  readonly calculatorHelp: string;
+  readonly calculatorInvalid: string;
+  readonly calculatorPlaceholder: string;
+  readonly calculatorResult: string;
+  readonly changedText: string;
   readonly clear: string;
+  readonly collapseUnchangedLines: (lineCount: number) => string;
+  readonly compareText: string;
   readonly cookieViewer: string;
   readonly cookieViewerPrivacy: string;
   readonly cookieList: string;
@@ -47,6 +58,7 @@ type Messages = {
   readonly editPassword: string;
   readonly export: string;
   readonly exported: string;
+  readonly expandUnchangedLines: (lineCount: number) => string;
   readonly failedImport: string;
   readonly failedSave: string;
   readonly frontendDeveloperTools: string;
@@ -60,6 +72,8 @@ type Messages = {
   readonly localPasswordManager: string;
   readonly localDomain: string;
   readonly localDomainPlaceholder: string;
+  readonly longTextCompare: string;
+  readonly longTextCompareHelp: string;
   readonly menu: string;
   readonly menuOrder: string;
   readonly menuSettings: string;
@@ -74,10 +88,13 @@ type Messages = {
   readonly noDomainRules: string;
   readonly noCookies: string;
   readonly noPasswords: string;
+  readonly noTextDiff: string;
   readonly noOtherSitePasswords: string;
   readonly otherSites: string;
+  readonly originalText: string;
   readonly onlineDomain: string;
   readonly onlineDomainPlaceholder: string;
+  readonly openLongTextCompareConfirm: string;
   readonly pageStatus: (currentPage: number, totalPages: number) => string;
   readonly password: string;
   readonly passwordCopied: string;
@@ -109,6 +126,10 @@ type Messages = {
   readonly switchDomain: string;
   readonly switchToLocalDomain: string;
   readonly switchToOnlineDomain: string;
+  readonly textCompare: string;
+  readonly textCompareEmpty: string;
+  readonly textCompareHelp: string;
+  readonly textCompareResult: string;
   readonly updated: string;
   readonly url: string;
   readonly usernamePlaceholder: string;
@@ -122,11 +143,22 @@ export const messages: Record<Locale, Messages> = {
     add: "新增",
     addFirstAccount: "新增第一个账号",
     addPassword: "新增密码",
+    acceptLeft: "采用左侧",
+    acceptRight: "采用右侧",
     cancel: "取消",
     accountCopied: "账号已复制。",
     actions: "操作",
     all: "全部",
+    calculator: "计算器",
+    calculatorExpression: "表达式",
+    calculatorHelp: "支持四则运算、小数、括号和负数，可直接输入表达式或点击按钮计算。",
+    calculatorInvalid: "表达式无效",
+    calculatorPlaceholder: "例如：1+2*(3-4)",
+    calculatorResult: "结果",
+    changedText: "修改后文本",
     clear: "清空",
+    collapseUnchangedLines: (lineCount) => `收起 ${lineCount} 行相同内容`,
+    compareText: "比较",
     cookieViewer: "查看 Cookie",
     cookieViewerPrivacy: "仅展示已保存接口请求实际携带的 Cookie header，不会上传到网络中。",
     cookieList: "Cookie 列表",
@@ -165,6 +197,7 @@ export const messages: Record<Locale, Messages> = {
     editPassword: "编辑密码",
     export: "导出",
     exported: "密码库已导出。",
+    expandUnchangedLines: (lineCount) => `展开 ${lineCount} 行相同内容`,
     failedImport: "密码库导入失败。",
     failedSave: "密码保存失败。",
     frontendDeveloperTools: "前端开发工具",
@@ -178,6 +211,8 @@ export const messages: Record<Locale, Messages> = {
     localPasswordManager: "本地密码管理器",
     localDomain: "本地开发域名",
     localDomainPlaceholder: "localhost:5173",
+    longTextCompare: "长文本对比",
+    longTextCompareHelp: "适合粘贴较长文本进行全屏对比，所有内容仅在当前浏览器本地处理。",
     menu: "菜单",
     menuOrder: "菜单顺序",
     menuSettings: "菜单设置",
@@ -192,10 +227,13 @@ export const messages: Record<Locale, Messages> = {
     noDomainRules: "还没有保存域名规则。",
     noCookies: "还没有捕获到该接口请求携带的 Cookie。",
     noPasswords: "还没有保存密码。",
+    noTextDiff: "两侧文本没有差异。",
     noOtherSitePasswords: "没有其他网站账号。",
     otherSites: "其他网站",
+    originalText: "原始文本",
     onlineDomain: "线上域名",
     onlineDomainPlaceholder: "www.example.test",
+    openLongTextCompareConfirm: "当前文本超过 10 行，更适合使用长文本对比。是否打开长文本对比？",
     pageStatus: (currentPage, totalPages) => `${currentPage} / ${totalPages}`,
     password: "密码",
     passwordCopied: "密码已复制。",
@@ -227,6 +265,10 @@ export const messages: Record<Locale, Messages> = {
     switchDomain: "切换域名",
     switchToLocalDomain: "切换为本地",
     switchToOnlineDomain: "切换为线上",
+    textCompare: "文本比较",
+    textCompareEmpty: "输入左右两侧文本后点击比较。",
+    textCompareHelp: "在左右输入框中分别粘贴文本，点击比较后可查看差异，也可像 Git 一样采用左侧或右侧变更。",
+    textCompareResult: "比较结果",
     updated: "密码已更新到本地。",
     url: "网址",
     usernamePlaceholder: "请输入账号",
@@ -238,11 +280,22 @@ export const messages: Record<Locale, Messages> = {
     add: "Add",
     addFirstAccount: "Add First Account",
     addPassword: "Add Password",
+    acceptLeft: "Accept Left",
+    acceptRight: "Accept Right",
     cancel: "Cancel",
     accountCopied: "Account copied.",
     actions: "Actions",
     all: "All",
+    calculator: "Calculator",
+    calculatorExpression: "Expression",
+    calculatorHelp: "Supports arithmetic, decimals, parentheses, and negative numbers. Type an expression or use the buttons.",
+    calculatorInvalid: "Invalid expression",
+    calculatorPlaceholder: "e.g. 1+2*(3-4)",
+    calculatorResult: "Result",
+    changedText: "Changed Text",
     clear: "Clear",
+    collapseUnchangedLines: (lineCount) => `Collapse ${lineCount} unchanged lines`,
+    compareText: "Compare",
     cookieViewer: "View Cookie",
     cookieViewerPrivacy: "Only the Cookie header captured from the saved API request is displayed. Nothing is uploaded.",
     cookieList: "Cookie List",
@@ -281,6 +334,7 @@ export const messages: Record<Locale, Messages> = {
     editPassword: "Edit Password",
     export: "Export",
     exported: "Password vault exported.",
+    expandUnchangedLines: (lineCount) => `Expand ${lineCount} unchanged lines`,
     failedImport: "Failed to import password vault.",
     failedSave: "Failed to save password.",
     frontendDeveloperTools: "Frontend Developer Tools",
@@ -294,6 +348,8 @@ export const messages: Record<Locale, Messages> = {
     localPasswordManager: "Local Password Manager",
     localDomain: "Local development domain",
     localDomainPlaceholder: "localhost:5173",
+    longTextCompare: "Long Text Compare",
+    longTextCompareHelp: "Designed for comparing longer text in a full-page workspace. All content is processed locally in this browser.",
     menu: "Menu",
     menuOrder: "Menu order",
     menuSettings: "Menu Settings",
@@ -308,10 +364,13 @@ export const messages: Record<Locale, Messages> = {
     noDomainRules: "No saved domain rules yet.",
     noCookies: "No cookies have been captured from this API request yet.",
     noPasswords: "No passwords saved yet.",
+    noTextDiff: "No differences found.",
     noOtherSitePasswords: "No accounts for other sites.",
     otherSites: "Other Sites",
+    originalText: "Original Text",
     onlineDomain: "Online domain",
     onlineDomainPlaceholder: "www.example.test",
+    openLongTextCompareConfirm: "The current text is over 10 lines and is better suited for Long Text Compare. Open it now?",
     pageStatus: (currentPage, totalPages) => `${currentPage} / ${totalPages}`,
     password: "Password",
     passwordCopied: "Password copied.",
@@ -343,6 +402,10 @@ export const messages: Record<Locale, Messages> = {
     switchDomain: "Switch Domain",
     switchToLocalDomain: "Switch to Local",
     switchToOnlineDomain: "Switch to Online",
+    textCompare: "Text Compare",
+    textCompareEmpty: "Enter text on both sides, then click Compare.",
+    textCompareHelp: "Paste text into the left and right inputs. Review differences and accept left or right changes like a Git merge.",
+    textCompareResult: "Compare Result",
     updated: "Password updated locally.",
     url: "URL",
     usernamePlaceholder: "Enter account",
