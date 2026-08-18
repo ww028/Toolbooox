@@ -61,7 +61,12 @@ type Messages = {
   readonly localDomain: string;
   readonly localDomainPlaceholder: string;
   readonly menu: string;
+  readonly menuOrder: string;
+  readonly menuSettings: string;
+  readonly menuSettingsHelp: string;
   readonly matchedAccounts: string;
+  readonly moveDown: string;
+  readonly moveUp: string;
   readonly nextPage: string;
   readonly noActiveSite: string;
   readonly noActiveSiteHelp: string;
@@ -98,6 +103,7 @@ type Messages = {
   readonly savedDomainRules: string;
   readonly select: string;
   readonly selected: string;
+  readonly settings: string;
   readonly show: string;
   readonly saveRequestUrl: string;
   readonly switchDomain: string;
@@ -107,6 +113,7 @@ type Messages = {
   readonly url: string;
   readonly usernamePlaceholder: string;
   readonly validationRequired: string;
+  readonly version: string;
 };
 
 export const messages: Record<Locale, Messages> = {
@@ -172,7 +179,12 @@ export const messages: Record<Locale, Messages> = {
     localDomain: "本地开发域名",
     localDomainPlaceholder: "localhost:5173",
     menu: "菜单",
+    menuOrder: "菜单顺序",
+    menuSettings: "菜单设置",
+    menuSettingsHelp: "勾选控制菜单是否显示，使用上下按钮调整左侧菜单顺序。设置入口始终保留。",
     matchedAccounts: "匹配账号",
+    moveDown: "下移",
+    moveUp: "上移",
     nextPage: "下一页",
     noActiveSite: "未检测到当前网站",
     noActiveSiteHelp: "在网站页面打开插件后，会自动匹配已保存账号。",
@@ -209,6 +221,7 @@ export const messages: Record<Locale, Messages> = {
     savedDomainRules: "已保存规则",
     select: "选择",
     selected: "已选中",
+    settings: "设置",
     show: "显示",
     saveRequestUrl: "保存接口地址",
     switchDomain: "切换域名",
@@ -217,7 +230,8 @@ export const messages: Record<Locale, Messages> = {
     updated: "密码已更新到本地。",
     url: "网址",
     usernamePlaceholder: "请输入账号",
-    validationRequired: "请填写显示名称、网址和账号。"
+    validationRequired: "请填写显示名称、网址和账号。",
+    version: "版本"
   },
   en: {
     account: "Account",
@@ -281,7 +295,12 @@ export const messages: Record<Locale, Messages> = {
     localDomain: "Local development domain",
     localDomainPlaceholder: "localhost:5173",
     menu: "Menu",
+    menuOrder: "Menu order",
+    menuSettings: "Menu Settings",
+    menuSettingsHelp: "Use checkboxes to show or hide menu items, and arrow buttons to reorder the left menu. Settings always stays available.",
     matchedAccounts: "Matched Accounts",
+    moveDown: "Move down",
+    moveUp: "Move up",
     nextPage: "Next",
     noActiveSite: "No active site detected",
     noActiveSiteHelp: "Open this popup on a website to match saved accounts.",
@@ -318,6 +337,7 @@ export const messages: Record<Locale, Messages> = {
     savedDomainRules: "Saved Rules",
     select: "Select",
     selected: "Selected",
+    settings: "Settings",
     show: "Show",
     saveRequestUrl: "Save API URL",
     switchDomain: "Switch Domain",
@@ -326,6 +346,7 @@ export const messages: Record<Locale, Messages> = {
     updated: "Password updated locally.",
     url: "URL",
     usernamePlaceholder: "Enter account",
-    validationRequired: "Display name, URL, and account are required."
+    validationRequired: "Display name, URL, and account are required.",
+    version: "Version"
   }
 };

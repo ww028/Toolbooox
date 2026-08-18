@@ -40,6 +40,7 @@ import type {
 } from "../shared/passwordVault/types";
 import { getPaginatedItems, getTotalPages } from "../shared/passwordVault/pagination";
 import { getHostname, isSameOrSubdomain } from "../shared/passwordVault/urlMatcher";
+import manifest from "../../public/manifest.json";
 import "./styles.css";
 
 type FormState = {
@@ -49,7 +50,14 @@ type FormState = {
   readonly password: string;
 };
 
-type ToolKey = "passwordManager" | "domainSwitcher" | "cookieViewer";
+const PRIMARY_TOOL_KEYS = ["passwordManager", "domainSwitcher", "cookieViewer"] as const;
+
+type PrimaryToolKey = (typeof PRIMARY_TOOL_KEYS)[number];
+type ToolKey = PrimaryToolKey | "settings";
+type MenuSettings = {
+  readonly order: PrimaryToolKey[];
+  readonly hidden: PrimaryToolKey[];
+};
 type SavedEntriesTab = "otherSites" | "all";
 type PendingAction =
   | "save"
@@ -74,14 +82,28 @@ const emptyDomainSwitcherDraft: DomainSwitcherDraft = {
 
 const PASSWORD_PAGE_SIZE = 10;
 const ACTIVE_TOOL_STORAGE_KEY = "toolbooox.activeTool";
+const MENU_SETTINGS_STORAGE_KEY = "toolbooox.menuSettings";
 const DEFAULT_LOCAL_DOMAIN = "localhost:";
+const defaultMenuSettings: MenuSettings = {
+  order: [...PRIMARY_TOOL_KEYS],
+  hidden: []
+};
 
 function hasChromeStorage(): boolean {
   return typeof chrome !== "undefined" && Boolean(chrome.storage?.local);
 }
 
 function isToolKey(value: unknown): value is ToolKey {
-  return value === "passwordManager" || value === "domainSwitcher" || value === "cookieViewer";
+  return (
+    value === "passwordManager" ||
+    value === "domainSwitcher" ||
+    value === "cookieViewer" ||
+    value === "settings"
+  );
+}
+
+function isPrimaryToolKey(value: unknown): value is PrimaryToolKey {
+  return PRIMARY_TOOL_KEYS.some((toolKey) => toolKey === value);
 }
 
 function normalizeSavedToolKey(value: unknown): ToolKey {
@@ -109,6 +131,57 @@ async function saveActiveTool(toolKey: ToolKey): Promise<void> {
   }
 
   window.localStorage.setItem(ACTIVE_TOOL_STORAGE_KEY, toolKey);
+}
+
+function normalizeMenuSettings(value: unknown): MenuSettings {
+  if (!value || typeof value !== "object") {
+    return defaultMenuSettings;
+  }
+
+  const savedSettings = value as Partial<MenuSettings>;
+  const normalizedOrder = Array.isArray(savedSettings.order)
+    ? savedSettings.order.filter(isPrimaryToolKey)
+    : [];
+  const order = [
+    ...normalizedOrder,
+    ...PRIMARY_TOOL_KEYS.filter((toolKey) => !normalizedOrder.includes(toolKey))
+  ];
+  const hidden = Array.isArray(savedSettings.hidden)
+    ? savedSettings.hidden.filter(isPrimaryToolKey)
+    : [];
+
+  return {
+    order,
+    hidden: Array.from(new Set(hidden))
+  };
+}
+
+async function getSavedMenuSettings(): Promise<MenuSettings> {
+  if (hasChromeStorage()) {
+    const result = await chrome.storage.local.get(MENU_SETTINGS_STORAGE_KEY);
+    return normalizeMenuSettings(result[MENU_SETTINGS_STORAGE_KEY]);
+  }
+
+  const rawSettings = window.localStorage.getItem(MENU_SETTINGS_STORAGE_KEY);
+
+  if (!rawSettings) {
+    return defaultMenuSettings;
+  }
+
+  try {
+    return normalizeMenuSettings(JSON.parse(rawSettings));
+  } catch {
+    return defaultMenuSettings;
+  }
+}
+
+async function saveMenuSettings(settings: MenuSettings): Promise<void> {
+  if (hasChromeStorage()) {
+    await chrome.storage.local.set({ [MENU_SETTINGS_STORAGE_KEY]: settings });
+    return;
+  }
+
+  window.localStorage.setItem(MENU_SETTINGS_STORAGE_KEY, JSON.stringify(settings));
 }
 
 function toDraft(formState: FormState): PasswordEntryDraft {
@@ -188,6 +261,7 @@ function getVaultErrorMessage(error: unknown, t: (typeof messages)[Locale]): str
 function PopupApp() {
   const [locale, setLocale] = useState<Locale>(getDefaultLocale());
   const [activeTool, setActiveTool] = useState<ToolKey>("passwordManager");
+  const [menuSettings, setMenuSettings] = useState<MenuSettings>(defaultMenuSettings);
   const [entries, setEntries] = useState<PasswordEntry[]>([]);
   const [activeTab, setActiveTab] = useState<ActiveTabInfo | null>(null);
   const [formState, setFormState] = useState<FormState>(emptyForm);
@@ -212,6 +286,7 @@ function PopupApp() {
   useEffect(() => {
     void getSavedLocale().then(setLocale);
     void getSavedActiveTool().then(setActiveTool);
+    void getSavedMenuSettings().then(setMenuSettings);
     void getPasswordEntries().then(setEntries);
     void getDomainSwitcherRules().then((rules) => {
       setDomainSwitcherRules(rules);
@@ -248,6 +323,28 @@ function PopupApp() {
   }, [message]);
 
   const activeHostname = activeTab?.url ? getHostname(activeTab.url) : "";
+  const hiddenMenuItems = useMemo(
+    () => new Set(menuSettings.hidden),
+    [menuSettings.hidden]
+  );
+  const visibleMenuTools = useMemo(
+    () => menuSettings.order.filter((toolKey) => !hiddenMenuItems.has(toolKey)),
+    [hiddenMenuItems, menuSettings.order]
+  );
+
+  useEffect(() => {
+    if (activeTool === "settings") {
+      return;
+    }
+
+    if (!hiddenMenuItems.has(activeTool)) {
+      return;
+    }
+
+    const nextTool = visibleMenuTools[0] ?? "settings";
+    setActiveTool(nextTool);
+    void saveActiveTool(nextTool);
+  }, [activeTool, hiddenMenuItems, visibleMenuTools]);
 
   useEffect(() => {
     if (activeTool !== "cookieViewer") {
@@ -516,6 +613,57 @@ function PopupApp() {
     setActiveTool(nextTool);
     setMessage("");
     await saveActiveTool(nextTool);
+  };
+
+  const getPrimaryToolLabel = (toolKey: PrimaryToolKey): string => {
+    switch (toolKey) {
+      case "passwordManager":
+        return t.passwordManager;
+      case "domainSwitcher":
+        return t.domainSwitcher;
+      case "cookieViewer":
+        return t.cookieViewer;
+    }
+  };
+
+  const updateMenuSettings = (nextSettings: MenuSettings) => {
+    setMenuSettings(nextSettings);
+    void saveMenuSettings(nextSettings);
+  };
+
+  const handleToggleMenuItem = (toolKey: PrimaryToolKey) => {
+    const hiddenSet = new Set(menuSettings.hidden);
+
+    if (hiddenSet.has(toolKey)) {
+      hiddenSet.delete(toolKey);
+    } else {
+      hiddenSet.add(toolKey);
+    }
+
+    updateMenuSettings({
+      ...menuSettings,
+      hidden: Array.from(hiddenSet)
+    });
+  };
+
+  const handleMoveMenuItem = (toolKey: PrimaryToolKey, direction: -1 | 1) => {
+    const currentIndex = menuSettings.order.indexOf(toolKey);
+    const nextIndex = currentIndex + direction;
+
+    if (currentIndex < 0 || nextIndex < 0 || nextIndex >= menuSettings.order.length) {
+      return;
+    }
+
+    const nextOrder = [...menuSettings.order];
+    [nextOrder[currentIndex], nextOrder[nextIndex]] = [
+      nextOrder[nextIndex],
+      nextOrder[currentIndex]
+    ];
+
+    updateMenuSettings({
+      ...menuSettings,
+      order: nextOrder
+    });
   };
 
   const togglePasswordVisibility = (id: string) => {
@@ -821,29 +969,48 @@ function PopupApp() {
 
       <div className="app-body">
         <aside className="sidebar" aria-label={t.menu}>
+          <div className="sidebar-menu">
+            {visibleMenuTools.map((toolKey) => (
+              <button
+                aria-current={activeTool === toolKey ? "page" : undefined}
+                className="menu-item"
+                key={toolKey}
+                type="button"
+                onClick={() => handleToolChange(toolKey)}
+              >
+                {getPrimaryToolLabel(toolKey)}
+              </button>
+            ))}
+          </div>
           <button
-            aria-current={activeTool === "passwordManager" ? "page" : undefined}
-            className="menu-item"
+            aria-current={activeTool === "settings" ? "page" : undefined}
+            aria-label={t.settings}
+            className="settings-menu-button"
+            title={t.settings}
             type="button"
-            onClick={() => handleToolChange("passwordManager")}
+            onClick={() => handleToolChange("settings")}
           >
-            {t.passwordManager}
-          </button>
-          <button
-            aria-current={activeTool === "domainSwitcher" ? "page" : undefined}
-            className="menu-item"
-            type="button"
-            onClick={() => handleToolChange("domainSwitcher")}
-          >
-            {t.domainSwitcher}
-          </button>
-          <button
-            aria-current={activeTool === "cookieViewer" ? "page" : undefined}
-            className="menu-item"
-            type="button"
-            onClick={() => handleToolChange("cookieViewer")}
-          >
-            {t.cookieViewer}
+            <svg
+              aria-hidden="true"
+              className="settings-icon"
+              fill="none"
+              viewBox="0 0 24 24"
+            >
+              <path
+                d="M12 15.5a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7Z"
+                stroke="currentColor"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth="1.5"
+              />
+              <path
+                d="M19.4 15a1.7 1.7 0 0 0 .34 1.88l.04.04a2.06 2.06 0 0 1-2.91 2.91l-.04-.04a1.7 1.7 0 0 0-1.88-.34 1.7 1.7 0 0 0-1.03 1.56V21a2.06 2.06 0 0 1-4.12 0v-.06a1.7 1.7 0 0 0-1.03-1.56 1.7 1.7 0 0 0-1.88.34l-.04.04a2.06 2.06 0 0 1-2.91-2.91l.04-.04A1.7 1.7 0 0 0 4.6 15a1.7 1.7 0 0 0-1.56-1.03H3a2.06 2.06 0 0 1 0-4.12h.06A1.7 1.7 0 0 0 4.6 8.82a1.7 1.7 0 0 0-.34-1.88l-.04-.04a2.06 2.06 0 0 1 2.91-2.91l.04.04a1.7 1.7 0 0 0 1.88.34A1.7 1.7 0 0 0 10.08 2.8V3a2.06 2.06 0 0 1 4.12 0v-.06a1.7 1.7 0 0 0 1.03 1.56 1.7 1.7 0 0 0 1.88-.34l.04-.04a2.06 2.06 0 0 1 2.91 2.91l-.04.04a1.7 1.7 0 0 0-.34 1.88 1.7 1.7 0 0 0 1.56 1.03H21a2.06 2.06 0 0 1 0 4.12h-.06A1.7 1.7 0 0 0 19.4 15Z"
+                stroke="currentColor"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth="1.5"
+              />
+            </svg>
           </button>
         </aside>
 
@@ -1176,6 +1343,60 @@ function PopupApp() {
                   <p>{t.noDomainRules}</p>
                 </div>
               )}
+            </section>
+          </section>
+          ) : activeTool === "settings" ? (
+          <section className="feature-panel" aria-label={t.settings}>
+            <div className="feature-header">
+              <div>
+                <h2>{t.settings}</h2>
+                <p className="version-label">{t.version}: {manifest.version}</p>
+              </div>
+            </div>
+
+            <section className="developer-form" aria-label={t.menuSettings}>
+              <div className="section-heading">
+                <h3>{t.menuSettings}</h3>
+              </div>
+              <p className="tool-note">{t.menuSettingsHelp}</p>
+              <div className="menu-settings-list" role="list">
+                {menuSettings.order.map((toolKey, index) => {
+                  const isHidden = hiddenMenuItems.has(toolKey);
+
+                  return (
+                    <article className="menu-settings-row" key={toolKey} role="listitem">
+                      <label className="menu-visibility-toggle">
+                        <input
+                          checked={!isHidden}
+                          type="checkbox"
+                          onChange={() => handleToggleMenuItem(toolKey)}
+                        />
+                        <span>{getPrimaryToolLabel(toolKey)}</span>
+                      </label>
+                      <div className="menu-order-actions" aria-label={t.menuOrder}>
+                        <button
+                          aria-label={t.moveUp}
+                          disabled={index === 0}
+                          title={t.moveUp}
+                          type="button"
+                          onClick={() => handleMoveMenuItem(toolKey, -1)}
+                        >
+                          ↑
+                        </button>
+                        <button
+                          aria-label={t.moveDown}
+                          disabled={index === menuSettings.order.length - 1}
+                          title={t.moveDown}
+                          type="button"
+                          onClick={() => handleMoveMenuItem(toolKey, 1)}
+                        >
+                          ↓
+                        </button>
+                      </div>
+                    </article>
+                  );
+                })}
+              </div>
             </section>
           </section>
           ) : (
