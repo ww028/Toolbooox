@@ -6,6 +6,7 @@ import {
   initializeChromeLanguageModel,
   isChromeLanguageModelInitialized,
   prewarmChromeLanguageModel,
+  summarizeAiAssistantConversationTurn,
   type LanguageModelInitializationUpdate
 } from "../shared/aiAssistant/chromeLanguageModel";
 import {
@@ -295,6 +296,7 @@ function OptionsApp() {
       {
         id: conversationId,
         title,
+        summary: currentConversation?.summary,
         messages: [...aiAssistantMessages, userMessage, pendingAssistantMessage],
         createdAt,
         updatedAt: new Date().toISOString()
@@ -318,11 +320,20 @@ function OptionsApp() {
             )
           );
         },
-        { messages: aiAssistantMessages }
+        {
+          conversationSummary: currentConversation?.summary,
+          messages: aiAssistantMessages
+        }
       );
+      const nextSummary = await summarizeAiAssistantConversationTurn({
+        previousSummary: currentConversation?.summary,
+        userPrompt: prompt,
+        assistantAnswer: nextAnswer
+      }).catch(() => currentConversation?.summary ?? "");
       await persistAiAssistantConversation({
         id: conversationId,
         title,
+        summary: nextSummary || undefined,
         messages: [
           ...aiAssistantMessages,
           userMessage,
@@ -344,6 +355,7 @@ function OptionsApp() {
       await persistAiAssistantConversation({
         id: conversationId,
         title,
+        summary: currentConversation?.summary,
         messages: [...aiAssistantMessages, userMessage],
         createdAt,
         updatedAt: new Date().toISOString()

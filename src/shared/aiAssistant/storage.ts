@@ -19,6 +19,7 @@ export type AiAssistantStoredMessage = {
 export type AiAssistantConversation = {
   readonly id: string;
   readonly title: string;
+  readonly summary?: string;
   readonly messages: AiAssistantStoredMessage[];
   readonly createdAt: string;
   readonly updatedAt: string;
@@ -81,6 +82,7 @@ function normalizeConversation(value: unknown): AiAssistantConversation | null {
   return {
     id: conversation.id,
     title: conversation.title,
+    summary: typeof conversation.summary === "string" ? conversation.summary : undefined,
     messages: conversation.messages.filter(isStoredMessage),
     createdAt: conversation.createdAt,
     updatedAt: conversation.updatedAt

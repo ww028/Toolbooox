@@ -31,6 +31,7 @@ function createConversation(id: string, title: string): AiAssistantConversation 
   return {
     id,
     title,
+    summary: `${title} summary`,
     messages: [
       {
         id: `${id}-message`,

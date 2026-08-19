@@ -13,6 +13,7 @@ type ChromeLanguageModelSession = {
     input: string,
     options?: { readonly signal?: AbortSignal }
   ) => ReadableStream<string> | AsyncIterable<string>;
+  clone?: () => Promise<ChromeLanguageModelSession>;
   destroy?: () => void;
 };
 
@@ -24,6 +25,18 @@ type ChromeLanguageModelTextOptions = {
   readonly outputLanguage?: string;
 };
 
+type ChromeLanguageModelParams = {
+  readonly defaultTopK?: number;
+  readonly maxTopK?: number;
+  readonly defaultTemperature?: number;
+  readonly maxTemperature?: number;
+};
+
+type ChromeLanguageModelSamplingOptions = {
+  readonly temperature: number;
+  readonly topK: number;
+};
+
 type ChromeLanguageModelConstructor = {
   availability?: (
     options?: ChromeLanguageModelTextOptions
@@ -31,10 +44,12 @@ type ChromeLanguageModelConstructor = {
   capabilities?: () => Promise<{
     readonly available?: LanguageModelAvailability;
   }>;
-  create(options?: ChromeLanguageModelTextOptions & {
-    readonly systemPrompt?: string;
-    readonly monitor?: (monitorTarget: EventTarget) => void;
-  }): Promise<ChromeLanguageModelSession>;
+  params?: () => Promise<ChromeLanguageModelParams>;
+  create(options?: ChromeLanguageModelTextOptions &
+    Partial<ChromeLanguageModelSamplingOptions> & {
+      readonly systemPrompt?: string;
+      readonly monitor?: (monitorTarget: EventTarget) => void;
+    }): Promise<ChromeLanguageModelSession>;
 };
 
 export type AiAssistantPromptMessage = {
@@ -44,6 +59,13 @@ export type AiAssistantPromptMessage = {
 
 export type AiAssistantPromptOptions = {
   readonly messages?: readonly AiAssistantPromptMessage[];
+  readonly conversationSummary?: string;
+};
+
+export type AiAssistantMemorySummaryOptions = {
+  readonly previousSummary?: string;
+  readonly userPrompt: string;
+  readonly assistantAnswer: string;
 };
 
 export type LanguageModelInitializationPhase =
@@ -73,10 +95,14 @@ const AI_ASSISTANT_SYSTEM_PROMPT =
   ].join("\n");
 const LANGUAGE_MODEL_CREATE_TIMEOUT_MS = 120_000;
 const LANGUAGE_MODEL_PROMPT_TIMEOUT_MS = 8_000;
+const LANGUAGE_MODEL_MEMORY_TIMEOUT_MS = 4_000;
 const LANGUAGE_MODEL_WARMUP_TIMEOUT_MS = 30_000;
 const LANGUAGE_MODEL_WARMUP_PROMPT = "Reply with OK.";
 const AI_ASSISTANT_CONTEXT_MESSAGE_LIMIT = 6;
 const AI_ASSISTANT_CONTEXT_CONTENT_LIMIT = 1_200;
+const AI_ASSISTANT_SUMMARY_CONTENT_LIMIT = 800;
+const LANGUAGE_MODEL_TEMPERATURE = 0.4;
+const LANGUAGE_MODEL_TOP_K = 32;
 const LANGUAGE_MODEL_DECLARED_OUTPUT_LANGUAGE = "en";
 const LANGUAGE_MODEL_TEXT_OPTIONS: ChromeLanguageModelTextOptions = {
   expectedOutputs: [{ type: "text", languages: [LANGUAGE_MODEL_DECLARED_OUTPUT_LANGUAGE] }],
@@ -134,6 +160,35 @@ function withTimeout<T>(
   });
 }
 
+function clampLanguageModelNumber(value: number, maxValue: number | undefined): number {
+  if (typeof maxValue !== "number" || !Number.isFinite(maxValue)) {
+    return value;
+  }
+
+  return Math.min(value, maxValue);
+}
+
+async function getLanguageModelSamplingOptions(
+  languageModel: ChromeLanguageModelConstructor
+): Promise<ChromeLanguageModelSamplingOptions> {
+  try {
+    const params = await languageModel.params?.();
+
+    return {
+      temperature: clampLanguageModelNumber(
+        LANGUAGE_MODEL_TEMPERATURE,
+        params?.maxTemperature
+      ),
+      topK: clampLanguageModelNumber(LANGUAGE_MODEL_TOP_K, params?.maxTopK)
+    };
+  } catch {
+    return {
+      temperature: LANGUAGE_MODEL_TEMPERATURE,
+      topK: LANGUAGE_MODEL_TOP_K
+    };
+  }
+}
+
 function truncatePromptContent(content: string, maxLength: number): string {
   const normalizedContent = content.replace(/\s+/g, " ").trim();
 
@@ -167,6 +222,51 @@ function formatPromptHistory(
     .join("\n");
 }
 
+function formatConversationSummary(summary: string | undefined): string {
+  const normalizedSummary = summary?.trim();
+
+  if (!normalizedSummary) {
+    return "无";
+  }
+
+  return truncatePromptContent(normalizedSummary, AI_ASSISTANT_SUMMARY_CONTENT_LIMIT);
+}
+
+function normalizeMemorySummary(summary: string): string {
+  return summary
+    .replace(/^["'“”‘’]+|["'“”‘’]+$/g, "")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, AI_ASSISTANT_SUMMARY_CONTENT_LIMIT);
+}
+
+function createAiAssistantMemoryPrompt({
+  previousSummary,
+  userPrompt,
+  assistantAnswer
+}: AiAssistantMemorySummaryOptions): string {
+  return [
+    "请为本次本地 AI 助手会话维护一份压缩记忆。",
+    "",
+    "要求：",
+    "1. 只保留对后续对话有帮助的信息。",
+    "2. 合并旧摘要和本轮新增信息。",
+    "3. 输出 1-2 句中文摘要，不要使用标题、列表或解释。",
+    "4. 不要加入用户没有表达过的偏好或事实。",
+    "",
+    "旧摘要：",
+    previousSummary?.trim() || "无",
+    "",
+    "本轮用户问题：",
+    truncatePromptContent(userPrompt, AI_ASSISTANT_CONTEXT_CONTENT_LIMIT),
+    "",
+    "本轮助手回答：",
+    truncatePromptContent(assistantAnswer, AI_ASSISTANT_CONTEXT_CONTENT_LIMIT),
+    "",
+    "新的压缩记忆："
+  ].join("\n");
+}
+
 export function createAiAssistantPrompt(
   prompt: string,
   options: AiAssistantPromptOptions = {}
@@ -184,6 +284,13 @@ export function createAiAssistantPrompt(
     "5. 如果用户要求翻译，直接输出译文，不加解释。",
     "6. 如果信息不足，明确说明缺口，并给出可执行的下一步。",
     "",
+    "复杂任务工作流：",
+    "1. 如果当前请求包含多个目标、大段文本整理、方案设计、排错或复杂分析，先把任务拆成 2-4 个小步骤。",
+    "2. 拆解后直接执行这些步骤，不要只给计划；除非用户明确只要计划。",
+    "3. 每个步骤只保留必要结果，避免展开冗长推理过程。",
+    "4. 如果无法在一次回答中完成，先完成最关键的一步，并说明下一步该继续处理什么。",
+    "5. 简单问答、翻译、改写不需要展示工作流，直接给结果。",
+    "",
     "示例（只学习风格，不要复述示例）：",
     "用户：你是谁",
     "助手：我是 Toolbooox 里的本地 AI 助手，可以帮你做摘要、翻译、润色和轻量问答。\n\n我不联网，所以更适合处理你直接给我的文本。",
@@ -191,12 +298,19 @@ export function createAiAssistantPrompt(
     "用户：帮我总结这篇文章",
     "助手：这篇文章主要在讲...\n\n值得关注的是...\n\n下一步可以...",
     "",
-    "处理步骤（在内部完成，不要逐字展示推理过程）：",
-    "Step 1: 判断用户任务类型与输出格式",
-    "Step 2: 提取最近上下文中的相关信息",
-    "Step 3: 生成简洁、准确、边界清晰的回答",
+    "用户：帮我整理这段网页内容，提取关键数据并给建议",
+    "助手：我会先压缩主要内容，再提取数据，最后给出建议。\n\n主要内容：...\n\n关键数据：...\n\n建议：...",
     "",
-    "最近对话上下文：",
+    "处理步骤（在内部完成，不要逐字展示推理过程）：",
+    "Step 1: 判断任务是简单请求还是复杂请求",
+    "Step 2: 简单请求直接回答；复杂请求先拆成小步骤",
+    "Step 3: 提取最近上下文和压缩记忆中的相关信息",
+    "Step 4: 按步骤生成简洁、准确、边界清晰的回答",
+    "",
+    "本次会话压缩记忆：",
+    formatConversationSummary(options.conversationSummary),
+    "",
+    "最近短期对话上下文：",
     formatPromptHistory(options.messages),
     "",
     "当前用户请求：",
@@ -248,9 +362,11 @@ async function getOrCreateLanguageModelSession(
 
   const currentSessionRequestId = ++sessionRequestId;
   onUpdate?.({ phase: "creating" });
+  const samplingOptions = await getLanguageModelSamplingOptions(languageModel);
   cachedSessionPromise = withTimeout(
     languageModel.create({
       ...LANGUAGE_MODEL_TEXT_OPTIONS,
+      ...samplingOptions,
       systemPrompt: AI_ASSISTANT_SYSTEM_PROMPT,
       monitor(monitorTarget) {
         monitorTarget.addEventListener("downloadprogress", (event) => {
@@ -341,6 +457,40 @@ export async function askChromeLanguageModel(
     LANGUAGE_MODEL_PROMPT_TIMEOUT_MS,
     "LANGUAGE_MODEL_TIMEOUT"
   );
+}
+
+export async function summarizeAiAssistantConversationTurn(
+  options: AiAssistantMemorySummaryOptions
+): Promise<string> {
+  const languageModel = getChromeLanguageModel();
+
+  if (!languageModel) {
+    throw new Error("LANGUAGE_MODEL_UNSUPPORTED");
+  }
+
+  await ensureLanguageModelAvailable(languageModel);
+  const session = await getOrCreateLanguageModelSession(languageModel);
+  const summarySession = session.clone
+    ? await withTimeout(
+        session.clone(),
+        LANGUAGE_MODEL_MEMORY_TIMEOUT_MS,
+        "LANGUAGE_MODEL_TIMEOUT"
+      )
+    : session;
+
+  try {
+    const summary = await withTimeout(
+      summarySession.prompt(createAiAssistantMemoryPrompt(options)),
+      LANGUAGE_MODEL_MEMORY_TIMEOUT_MS,
+      "LANGUAGE_MODEL_TIMEOUT"
+    );
+
+    return normalizeMemorySummary(summary) || options.previousSummary?.trim() || "";
+  } finally {
+    if (summarySession !== session) {
+      summarySession.destroy?.();
+    }
+  }
 }
 
 async function readLanguageModelStream(
