@@ -29,7 +29,7 @@ git status --short --branch
 建议执行隐私与内部依赖扫描：
 
 ```bash
-rg -n -e 'byted|bytedance|boe|scf|bnpm|@byted|@ies|volcengine|byteplus|toolbooox-passwords-[0-9]' .
+rg -n -e 'internal-company-keyword|private-registry|corp-domain|staging-domain|toolbooox-passwords-[0-9]' .
 rg -n -e 'AKIA[0-9A-Z]{16}|ghp_[A-Za-z0-9_]+|github_pat_[A-Za-z0-9_]+|sk-[A-Za-z0-9_-]+|BEGIN (RSA|OPENSSH|PRIVATE)|client_secret|api[_-]?key|access[_-]?token|authorization:|bearer ' .
 ```
 
