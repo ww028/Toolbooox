@@ -306,16 +306,20 @@ function OptionsApp() {
 
     try {
       let nextAnswer = "";
-      await askChromeLanguageModelStreaming(prompt, (chunk) => {
-        nextAnswer += chunk;
-        setAiAssistantMessages((currentMessages) =>
-          currentMessages.map((chatMessage) =>
-            chatMessage.id === assistantMessageId
-              ? { ...chatMessage, content: nextAnswer }
-              : chatMessage
-          )
-        );
-      });
+      await askChromeLanguageModelStreaming(
+        prompt,
+        (chunk) => {
+          nextAnswer += chunk;
+          setAiAssistantMessages((currentMessages) =>
+            currentMessages.map((chatMessage) =>
+              chatMessage.id === assistantMessageId
+                ? { ...chatMessage, content: nextAnswer }
+                : chatMessage
+            )
+          );
+        },
+        { messages: aiAssistantMessages }
+      );
       await persistAiAssistantConversation({
         id: conversationId,
         title,

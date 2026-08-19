@@ -37,12 +37,15 @@ export async function getSavedAiAssistantInitialized(): Promise<boolean> {
 }
 
 export async function saveAiAssistantInitialized(isInitialized: boolean): Promise<void> {
-  if (hasKeyValueIndexedDb()) {
-    await setIndexedDbValue(AI_ASSISTANT_INITIALIZED_STORAGE_KEY, isInitialized);
+  if (!hasKeyValueIndexedDb()) {
     return;
   }
 
-  await setIndexedDbValue(AI_ASSISTANT_INITIALIZED_STORAGE_KEY, isInitialized);
+  try {
+    await setIndexedDbValue(AI_ASSISTANT_INITIALIZED_STORAGE_KEY, isInitialized);
+  } catch {
+    // This flag is only a startup hint; failing to persist it should not break AI initialization.
+  }
 }
 
 function isStoredMessage(value: unknown): value is AiAssistantStoredMessage {

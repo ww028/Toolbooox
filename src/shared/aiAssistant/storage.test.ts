@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { IDBFactory } from "fake-indexeddb";
 import {
   getAiAssistantConversations,
+  saveAiAssistantInitialized,
   saveAiAssistantConversations,
   type AiAssistantConversation
 } from "./storage";
@@ -57,6 +58,12 @@ describe("ai assistant storage", () => {
     expect(conversations).toHaveLength(1);
     expect(await getAiAssistantConversations()).toEqual(conversations);
     expect(await readRawConversations()).toHaveLength(1);
+  });
+
+  it("ignores initialization hint persistence when IndexedDB is unavailable", async () => {
+    vi.stubGlobal("indexedDB", undefined);
+
+    await expect(saveAiAssistantInitialized(false)).resolves.toBeUndefined();
   });
 
 });

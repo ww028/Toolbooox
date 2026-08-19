@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
   askChromeLanguageModel,
   askChromeLanguageModelStreaming,
+  createAiAssistantPrompt,
   prewarmChromeLanguageModel,
   resetChromeLanguageModelSession
 } from "./chromeLanguageModel";
@@ -38,11 +39,24 @@ describe("chrome language model", () => {
     });
 
     await expect(prewarmChromeLanguageModel()).resolves.toBe(true);
-    await expect(askChromeLanguageModel("hello")).resolves.toBe("answer:hello");
+    await expect(askChromeLanguageModel("hello")).resolves.toContain("当前用户请求：\nhello");
 
     expect(languageModelMock.availability).toHaveBeenCalledTimes(1);
+    expect(languageModelMock.availability).toHaveBeenCalledWith(
+      expect.objectContaining({
+        expectedOutputs: [{ type: "text", languages: ["en"] }],
+        outputLanguage: "en"
+      })
+    );
     expect(languageModelMock.create).toHaveBeenCalledTimes(1);
     expect(languageModelMock.prompt).toHaveBeenCalledTimes(2);
+    expect(languageModelMock.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        systemPrompt: expect.stringContaining("你是我的个人浏览器助手"),
+        expectedOutputs: [{ type: "text", languages: ["en"] }],
+        outputLanguage: "en"
+      })
+    );
   });
 
   it("falls back to ai.languageModel", async () => {
@@ -55,10 +69,28 @@ describe("chrome language model", () => {
       }
     });
 
-    await expect(askChromeLanguageModel("local")).resolves.toBe("answer:local");
+    await expect(askChromeLanguageModel("local")).resolves.toContain("当前用户请求：\nlocal");
 
     expect(languageModelMock.availability).toHaveBeenCalledTimes(1);
     expect(languageModelMock.create).toHaveBeenCalledTimes(1);
+  });
+
+  it("builds an optimized prompt with task rules, examples, and recent context", () => {
+    const prompt = createAiAssistantPrompt("继续总结", {
+      messages: [
+        { role: "user", content: "第一轮问题" },
+        { role: "assistant", content: "第一轮回答" }
+      ]
+    });
+
+    expect(prompt).toContain("默认回答风格：");
+    expect(prompt).toContain("像自然聊天一样回答");
+    expect(prompt).toContain("段落之间保留空行");
+    expect(prompt).toContain("示例（只学习风格");
+    expect(prompt).toContain("Step 1");
+    expect(prompt).toContain("用户: 第一轮问题");
+    expect(prompt).toContain("助手: 第一轮回答");
+    expect(prompt).toContain("当前用户请求：\n继续总结");
   });
 
   it("reports unsupported browsers without throwing during prewarm", async () => {
