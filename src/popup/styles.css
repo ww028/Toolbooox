@@ -791,6 +791,68 @@ h3 {
   padding: 0 18px;
 }
 
+.ai-knowledge-form {
+  display: grid;
+  width: min(100%, 660px);
+  justify-self: center;
+  gap: 10px;
+}
+
+.ai-knowledge-form textarea {
+  min-height: 96px;
+}
+
+.ai-knowledge-list {
+  display: grid;
+  width: min(100%, 660px);
+  justify-self: center;
+  gap: 8px;
+}
+
+.ai-knowledge-item {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  border: 1px solid rgba(202, 215, 229, 0.62);
+  border-radius: 8px;
+  background: rgba(249, 252, 255, 0.56);
+  padding: 10px;
+}
+
+.ai-knowledge-item > div:first-child {
+  display: grid;
+  min-width: 0;
+  gap: 4px;
+}
+
+.ai-knowledge-item-actions {
+  display: flex;
+  flex-wrap: nowrap;
+  gap: 6px;
+}
+
+.ai-knowledge-item strong,
+.ai-knowledge-item span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ai-knowledge-item strong {
+  color: #202b3a;
+  font-size: 13px;
+  line-height: 1.25;
+}
+
+.ai-knowledge-item span {
+  color: #64778d;
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1.25;
+}
+
 .button-spinner {
   width: 14px;
   height: 14px;

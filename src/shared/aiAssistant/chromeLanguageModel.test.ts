@@ -126,6 +126,14 @@ describe("chrome language model", () => {
     expect(prompt).toContain("直接输出目标语言译文");
     expect(prompt).toContain("未指定目标语言时，中文翻译成英文，非中文翻译成中文");
     expect(prompt).toContain("目标语言不是中文，不要受默认中文回复规则影响");
+    expect(prompt).toContain("「我」「我的」都指用户本人");
+    expect(prompt).toContain("用「你」「你的」转述这些事实");
+    expect(prompt).toContain("涉及用户宠物时，统一称为「你的宠物」");
+    expect(prompt).toContain("你的宠物薯条是银渐层");
+    expect(prompt).toContain("只能根据上下文中的直接证据回答");
+    expect(prompt).toContain("相近但不同的事实不能当作肯定答案");
+    expect(prompt).toContain("不要在最终回答里说“根据片段”");
+    expect(prompt).toContain("我不知道呀，我这里没有这方面的信息");
     expect(prompt).toContain("复杂任务工作流：");
     expect(prompt).toContain("先把任务拆成 2-4 个小步骤");
     expect(prompt).toContain("拆解后直接执行这些步骤");

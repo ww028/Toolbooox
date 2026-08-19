@@ -31,6 +31,13 @@ import {
   saveAiAssistantInitialized
 } from "../shared/aiAssistant/storage";
 import {
+  deleteAiAssistantKnowledgeItem,
+  getAiAssistantKnowledgeItems,
+  saveAiAssistantKnowledgeItem,
+  type AiAssistantKnowledgeDraft,
+  type AiAssistantKnowledgeItem
+} from "../shared/aiAssistant/knowledgeBase";
+import {
   evaluateCalculatorExpression,
   formatCalculatorChineseDescription,
   formatCalculatorResult,
@@ -141,6 +148,7 @@ type PendingAction =
   | "saveAddressNavigation"
   | "translateText"
   | "initializeAiAssistant"
+  | "saveAiAssistantKnowledge"
   | "saveTodo"
   | null;
 
@@ -167,6 +175,11 @@ const emptyAddressNavigationDraft: AddressNavigationDraft = {
   title: "",
   remark: "",
   url: ""
+};
+const emptyAiAssistantKnowledgeDraft: AiAssistantKnowledgeDraft = {
+  title: "",
+  content: "",
+  tags: ""
 };
 
 const PASSWORD_PAGE_SIZE = 10;
@@ -486,6 +499,11 @@ function PopupApp() {
   const [aiAssistantInitializationStatus, setAiAssistantInitializationStatus] =
     useState<AiAssistantInitializationStatus>("checking");
   const [aiAssistantInitializationDetail, setAiAssistantInitializationDetail] = useState("");
+  const [aiAssistantKnowledgeItems, setAiAssistantKnowledgeItems] = useState<
+    AiAssistantKnowledgeItem[]
+  >([]);
+  const [aiAssistantKnowledgeDraft, setAiAssistantKnowledgeDraft] =
+    useState<AiAssistantKnowledgeDraft>(emptyAiAssistantKnowledgeDraft);
   const [calculatorExpression, setCalculatorExpression] = useState("");
   const [calculatorResult, setCalculatorResult] = useState("");
   const [calculatorResultDescription, setCalculatorResultDescription] = useState("");
@@ -493,6 +511,8 @@ function PopupApp() {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editingAddressNavigationId, setEditingAddressNavigationId] = useState<string | null>(null);
   const [editingTodoId, setEditingTodoId] = useState<string | null>(null);
+  const [editingAiAssistantKnowledgeId, setEditingAiAssistantKnowledgeId] =
+    useState<string | null>(null);
   const [isFormOpen, setIsFormOpen] = useState(false);
   const [isAddressNavigationFormOpen, setIsAddressNavigationFormOpen] = useState(false);
   const [isTodoFormOpen, setIsTodoFormOpen] = useState(false);
@@ -523,6 +543,7 @@ function PopupApp() {
     void getSavedAiAssistantInitialized().then((isInitialized) => {
       setAiAssistantInitializationStatus(isInitialized ? "ready" : "needed");
     });
+    void getAiAssistantKnowledgeItems().then(setAiAssistantKnowledgeItems);
     void getSavedMenuSettings().then(setMenuSettings);
     void getSavedTextCompareState().then((savedState) => {
       setLeftCompareText(savedState.leftText);
@@ -945,6 +966,80 @@ function PopupApp() {
     } finally {
       setPendingAction(null);
     }
+  };
+
+  const handleAiAssistantKnowledgeDraftChange =
+    (field: keyof AiAssistantKnowledgeDraft) =>
+    (event: ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
+      setAiAssistantKnowledgeDraft((currentDraft) => ({
+        ...currentDraft,
+        [field]: event.target.value
+      }));
+    };
+
+  const handleSaveAiAssistantKnowledge = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+
+    if (pendingAction === "saveAiAssistantKnowledge") {
+      return;
+    }
+
+    const title = aiAssistantKnowledgeDraft.title.trim();
+    const content = aiAssistantKnowledgeDraft.content.trim();
+
+    if (!title || !content) {
+      setMessage(t.aiAssistantKnowledgeRequired);
+      return;
+    }
+
+    setPendingAction("saveAiAssistantKnowledge");
+
+    try {
+      const editingKnowledgeItem = aiAssistantKnowledgeItems.find(
+        (item) => item.id === editingAiAssistantKnowledgeId
+      );
+
+      await saveAiAssistantKnowledgeItem(
+        {
+          ...aiAssistantKnowledgeDraft,
+          title,
+          content
+        },
+        editingKnowledgeItem
+      );
+      setAiAssistantKnowledgeDraft(emptyAiAssistantKnowledgeDraft);
+      setEditingAiAssistantKnowledgeId(null);
+      setAiAssistantKnowledgeItems(await getAiAssistantKnowledgeItems());
+      setMessage(t.aiAssistantKnowledgeSaved);
+    } finally {
+      setPendingAction(null);
+    }
+  };
+
+  const handleEditAiAssistantKnowledge = (item: AiAssistantKnowledgeItem) => {
+    setEditingAiAssistantKnowledgeId(item.id);
+    setAiAssistantKnowledgeDraft({
+      title: item.title,
+      content: item.content,
+      tags: item.tags
+    });
+  };
+
+  const handleCancelAiAssistantKnowledgeEdit = () => {
+    setEditingAiAssistantKnowledgeId(null);
+    setAiAssistantKnowledgeDraft(emptyAiAssistantKnowledgeDraft);
+  };
+
+  const handleDeleteAiAssistantKnowledge = async (item: AiAssistantKnowledgeItem) => {
+    if (!window.confirm(t.aiAssistantKnowledgeDeleteConfirm(item.title))) {
+      return;
+    }
+
+    await deleteAiAssistantKnowledgeItem(item.id);
+    if (editingAiAssistantKnowledgeId === item.id) {
+      handleCancelAiAssistantKnowledgeEdit();
+    }
+    setAiAssistantKnowledgeItems(await getAiAssistantKnowledgeItems());
   };
 
   const handleAddressNavigationDraftChange =
@@ -2842,6 +2937,93 @@ function PopupApp() {
                     {aiAssistantInitializationDetail}
                   </p>
                 ) : null}
+              </div>
+
+              <form
+                className="ai-knowledge-form"
+                aria-label={t.aiAssistantKnowledgeTitle}
+                onSubmit={handleSaveAiAssistantKnowledge}
+              >
+                <div className="section-heading">
+                  <h3>
+                    {editingAiAssistantKnowledgeId
+                      ? t.aiAssistantKnowledgeEditing
+                      : t.aiAssistantKnowledgeTitle}
+                  </h3>
+                  {editingAiAssistantKnowledgeId ? (
+                    <button
+                      className="text-button"
+                      type="button"
+                      onClick={handleCancelAiAssistantKnowledgeEdit}
+                    >
+                      {t.cancel}
+                    </button>
+                  ) : null}
+                </div>
+                <label>
+                  {t.aiAssistantKnowledgeTitle}
+                  <input
+                    autoComplete="off"
+                    placeholder={t.aiAssistantKnowledgeTitlePlaceholder}
+                    value={aiAssistantKnowledgeDraft.title}
+                    onChange={handleAiAssistantKnowledgeDraftChange("title")}
+                  />
+                </label>
+                <label>
+                  {t.aiAssistantKnowledgeTags}
+                  <input
+                    autoComplete="off"
+                    placeholder={t.aiAssistantKnowledgeTagsPlaceholder}
+                    value={aiAssistantKnowledgeDraft.tags}
+                    onChange={handleAiAssistantKnowledgeDraftChange("tags")}
+                  />
+                </label>
+                <label>
+                  {t.aiAssistantKnowledgeContent}
+                  <textarea
+                    placeholder={t.aiAssistantKnowledgeContentPlaceholder}
+                    value={aiAssistantKnowledgeDraft.content}
+                    onChange={handleAiAssistantKnowledgeDraftChange("content")}
+                  />
+                </label>
+                <button
+                  className="primary-button"
+                  disabled={pendingAction === "saveAiAssistantKnowledge"}
+                  type="submit"
+                >
+                  {t.save}
+                </button>
+              </form>
+
+              <div className="ai-knowledge-list" role="list">
+                {aiAssistantKnowledgeItems.length > 0 ? (
+                  aiAssistantKnowledgeItems.map((item) => (
+                    <article className="ai-knowledge-item" key={item.id} role="listitem">
+                      <div>
+                        <strong>{item.title}</strong>
+                        {item.tags ? <span>{item.tags}</span> : null}
+                      </div>
+                      <div className="ai-knowledge-item-actions">
+                        <button
+                          className="text-button"
+                          type="button"
+                          onClick={() => handleEditAiAssistantKnowledge(item)}
+                        >
+                          {t.edit}
+                        </button>
+                        <button
+                          className="text-button"
+                          type="button"
+                          onClick={() => handleDeleteAiAssistantKnowledge(item)}
+                        >
+                          {t.delete}
+                        </button>
+                      </div>
+                    </article>
+                  ))
+                ) : (
+                  <p className="tool-note">{t.aiAssistantKnowledgeEmpty}</p>
+                )}
               </div>
             </section>
           </section>

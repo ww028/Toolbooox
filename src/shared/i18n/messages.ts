@@ -36,6 +36,24 @@ type Messages = {
   readonly aiAssistantInitialized: string;
   readonly aiAssistantInitializeFirst: string;
   readonly aiAssistantInitializing: string;
+  readonly aiAssistantKnowledgeAwaitingConfirmation: string;
+  readonly aiAssistantKnowledgeCanceled: string;
+  readonly aiAssistantKnowledgeConfirmSave: (
+    title: string,
+    content: string,
+    tags: string
+  ) => string;
+  readonly aiAssistantKnowledgeContent: string;
+  readonly aiAssistantKnowledgeContentPlaceholder: string;
+  readonly aiAssistantKnowledgeDeleteConfirm: (title: string) => string;
+  readonly aiAssistantKnowledgeEmpty: string;
+  readonly aiAssistantKnowledgeEditing: string;
+  readonly aiAssistantKnowledgeRequired: string;
+  readonly aiAssistantKnowledgeSaved: string;
+  readonly aiAssistantKnowledgeTags: string;
+  readonly aiAssistantKnowledgeTagsPlaceholder: string;
+  readonly aiAssistantKnowledgeTitle: string;
+  readonly aiAssistantKnowledgeTitlePlaceholder: string;
   readonly aiAssistantHistory: string;
   readonly aiAssistantNewConversation: string;
   readonly aiAssistantNoHistory: string;
@@ -266,6 +284,29 @@ export const messages: Record<Locale, Messages> = {
     aiAssistantInitialized: "本机 AI 已初始化。",
     aiAssistantInitializeFirst: "请先初始化本机 AI。",
     aiAssistantInitializing: "初始化中...",
+    aiAssistantKnowledgeAwaitingConfirmation: "请回复「确认」保存，或回复「取消」放弃。",
+    aiAssistantKnowledgeCanceled: "已取消写入本地知识库。",
+    aiAssistantKnowledgeConfirmSave: (title, content, tags) =>
+      [
+        "我先整理成这样，确认后再写入本地知识库：",
+        "",
+        `标题：${title}`,
+        tags ? `标签：${tags}` : "",
+        `内容：${content}`,
+        "",
+        "回复「确认」保存，回复「取消」放弃。"
+      ].filter(Boolean).join("\n"),
+    aiAssistantKnowledgeContent: "内容",
+    aiAssistantKnowledgeContentPlaceholder: "粘贴笔记、常用文档、FAQ 或任何希望 AI 记住的资料",
+    aiAssistantKnowledgeDeleteConfirm: (title) => `确定删除「${title}」吗？`,
+    aiAssistantKnowledgeEmpty: "暂无本地知识片段。",
+    aiAssistantKnowledgeEditing: "编辑本地知识",
+    aiAssistantKnowledgeRequired: "请填写本地知识标题和内容。",
+    aiAssistantKnowledgeSaved: "本地知识已保存。",
+    aiAssistantKnowledgeTags: "标签",
+    aiAssistantKnowledgeTagsPlaceholder: "可选，用逗号分隔",
+    aiAssistantKnowledgeTitle: "本地知识库",
+    aiAssistantKnowledgeTitlePlaceholder: "标题，例如：试单流程",
     aiAssistantHistory: "历史对话",
     aiAssistantNewConversation: "新对话",
     aiAssistantNoHistory: "暂无历史对话。",
@@ -495,6 +536,29 @@ export const messages: Record<Locale, Messages> = {
     aiAssistantInitialized: "Local AI initialized.",
     aiAssistantInitializeFirst: "Initialize local AI first.",
     aiAssistantInitializing: "Initializing...",
+    aiAssistantKnowledgeAwaitingConfirmation: "Reply \"confirm\" to save, or \"cancel\" to discard.",
+    aiAssistantKnowledgeCanceled: "Canceled writing to local knowledge.",
+    aiAssistantKnowledgeConfirmSave: (title, content, tags) =>
+      [
+        "I organized it like this. Confirm before I write it to local knowledge:",
+        "",
+        `Title: ${title}`,
+        tags ? `Tags: ${tags}` : "",
+        `Content: ${content}`,
+        "",
+        "Reply \"confirm\" to save, or \"cancel\" to discard."
+      ].filter(Boolean).join("\n"),
+    aiAssistantKnowledgeContent: "Content",
+    aiAssistantKnowledgeContentPlaceholder: "Paste notes, frequent docs, FAQs, or anything you want AI to remember",
+    aiAssistantKnowledgeDeleteConfirm: (title) => `Delete "${title}"?`,
+    aiAssistantKnowledgeEmpty: "No local knowledge snippets yet.",
+    aiAssistantKnowledgeEditing: "Edit Local Knowledge",
+    aiAssistantKnowledgeRequired: "Enter a local knowledge title and content.",
+    aiAssistantKnowledgeSaved: "Local knowledge saved.",
+    aiAssistantKnowledgeTags: "Tags",
+    aiAssistantKnowledgeTagsPlaceholder: "Optional, separated by commas",
+    aiAssistantKnowledgeTitle: "Local Knowledge",
+    aiAssistantKnowledgeTitlePlaceholder: "Title, e.g. Trial order process",
     aiAssistantHistory: "History",
     aiAssistantNewConversation: "New Chat",
     aiAssistantNoHistory: "No chat history yet.",

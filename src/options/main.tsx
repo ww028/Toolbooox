@@ -11,6 +11,18 @@ import {
 } from "../shared/aiAssistant/chromeLanguageModel";
 import { consumeAiAssistantContextPrompt } from "../shared/aiAssistant/contextPrompt";
 import {
+  createAiAssistantKnowledgeMissingPrompt,
+  createAiAssistantKnowledgePrompt,
+  isAiAssistantKnowledgeSensitiveQuestion,
+  isAiAssistantKnowledgeSaveCancellation,
+  isAiAssistantKnowledgeSaveConfirmation,
+  parseAiAssistantKnowledgeSaveRequest,
+  saveAiAssistantKnowledgeItem,
+  searchAiAssistantKnowledge,
+  shouldUseAiAssistantKnowledge,
+  type AiAssistantKnowledgeDraft
+} from "../shared/aiAssistant/knowledgeBase";
+import {
   getAiAssistantConversations,
   getSavedAiAssistantInitialized,
   saveAiAssistantConversations,
@@ -87,6 +99,8 @@ function OptionsApp() {
     readonly input: string;
     readonly prompt: string;
   } | null>(null);
+  const [pendingAiAssistantKnowledgeDraft, setPendingAiAssistantKnowledgeDraft] =
+    useState<AiAssistantKnowledgeDraft | null>(null);
   const [aiAssistantInitializationStatus, setAiAssistantInitializationStatus] =
     useState<AiAssistantInitializationStatus>("checking");
   const [aiAssistantInitializationDetail, setAiAssistantInitializationDetail] = useState("");
@@ -304,10 +318,111 @@ function OptionsApp() {
       setMessage(t.aiAssistantInitializeFirst);
       return;
     }
-    const modelPrompt =
+    const appendAiAssistantLocalResponse = async (
+      responseContent: string,
+      options: {
+        readonly shouldPersistKnowledge?: boolean;
+        readonly shouldClearPendingKnowledge?: boolean;
+      } = {}
+    ) => {
+      const userMessage: AiAssistantMessage = {
+        id: createClientId("ai-user"),
+        role: "user",
+        content: prompt
+      };
+      const assistantMessage: AiAssistantMessage = {
+        id: createClientId("ai-assistant"),
+        role: "assistant",
+        content: responseContent
+      };
+      const currentConversation = aiAssistantConversations.find(
+        (conversation) => conversation.id === activeAiAssistantConversationId
+      );
+      const conversationId = currentConversation?.id ?? createClientId("ai-conversation");
+      const createdAt = currentConversation?.createdAt ?? new Date().toISOString();
+      const title = currentConversation?.title ?? createConversationTitle(prompt);
+
+      setAiAssistantMessages((currentMessages) => [
+        ...currentMessages,
+        userMessage,
+        assistantMessage
+      ]);
+      setActiveAiAssistantConversationId(conversationId);
+      setAiAssistantInput("");
+      setAiAssistantModelPromptOverride(null);
+      setPendingAction("askAiAssistant");
+
+      try {
+        if (options.shouldPersistKnowledge && pendingAiAssistantKnowledgeDraft) {
+          await saveAiAssistantKnowledgeItem(pendingAiAssistantKnowledgeDraft);
+        }
+        if (options.shouldClearPendingKnowledge) {
+          setPendingAiAssistantKnowledgeDraft(null);
+        }
+        await persistAiAssistantConversation({
+          id: conversationId,
+          title,
+          summary: currentConversation?.summary,
+          messages: [...aiAssistantMessages, userMessage, assistantMessage],
+          createdAt,
+          updatedAt: new Date().toISOString()
+        });
+        setMessage(responseContent);
+      } catch {
+        setMessage(t.aiAssistantFailed);
+      } finally {
+        setPendingAction(null);
+      }
+    };
+
+    if (pendingAiAssistantKnowledgeDraft) {
+      if (isAiAssistantKnowledgeSaveConfirmation(prompt)) {
+        await appendAiAssistantLocalResponse(t.aiAssistantKnowledgeSaved, {
+          shouldPersistKnowledge: true,
+          shouldClearPendingKnowledge: true
+        });
+        return;
+      }
+
+      if (isAiAssistantKnowledgeSaveCancellation(prompt)) {
+        await appendAiAssistantLocalResponse(t.aiAssistantKnowledgeCanceled, {
+          shouldClearPendingKnowledge: true
+        });
+        return;
+      }
+
+      await appendAiAssistantLocalResponse(t.aiAssistantKnowledgeAwaitingConfirmation);
+      return;
+    }
+
+    const knowledgeSaveDraft = parseAiAssistantKnowledgeSaveRequest(prompt);
+
+    if (knowledgeSaveDraft) {
+      setPendingAiAssistantKnowledgeDraft(knowledgeSaveDraft);
+      await appendAiAssistantLocalResponse(
+        t.aiAssistantKnowledgeConfirmSave(
+          knowledgeSaveDraft.title,
+          knowledgeSaveDraft.content,
+          knowledgeSaveDraft.tags
+        )
+      );
+      return;
+    }
+
+    let modelPrompt =
       aiAssistantModelPromptOverride?.input.trim() === prompt
         ? aiAssistantModelPromptOverride.prompt
         : prompt;
+    const knowledgeSnippets = await searchAiAssistantKnowledge(prompt).catch(() => []);
+
+    if (knowledgeSnippets.length > 0) {
+      modelPrompt = createAiAssistantKnowledgePrompt(prompt, modelPrompt, knowledgeSnippets);
+    } else if (
+      shouldUseAiAssistantKnowledge(prompt) &&
+      isAiAssistantKnowledgeSensitiveQuestion(prompt)
+    ) {
+      modelPrompt = createAiAssistantKnowledgeMissingPrompt(prompt, modelPrompt);
+    }
 
     const userMessage: AiAssistantMessage = {
       id: createClientId("ai-user"),

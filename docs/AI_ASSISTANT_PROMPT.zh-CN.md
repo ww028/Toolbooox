@@ -1,407 +1,391 @@
-# AI 助手 Prompt 设计与接入指南
+# AI 助手功能、使用与开发接入指南
 
-本文档用于辅助开发者理解、维护和复用 Toolbooox AI 助手的模型约束方案。
+本文档面向两类读者：
 
-它不是产品文案，也不是简单的代码摘录。它回答三个问题：
+1. 普通用户：了解 Toolbooox AI 助手能做什么、入口在哪里、怎么使用。
+2. 开发者：了解当前能力如何实现、如何维护、如何基于这套方案继续开发。
 
-1. 为什么要这样约束本地模型。
-2. 当前实现如何把约束落到代码里。
-3. 如果要在其他功能或项目中复用，应该怎么改。
+AI 助手基于 Chrome 内置 `LanguageModel` / Gemini Nano。它是本地优先的浏览器 AI 工具，不依赖云端模型，不具备联网搜索能力，适合处理用户直接提供或当前页面可读取的文本。
 
-## 已落地优化摘要
+## 功能总览
 
-当前 AI 助手已落地以下几类模型能力优化：
+当前 AI 助手支持以下能力：
 
-| 优化项       | 实现方式                                                             | 主要效果                               |
-| ------------ | -------------------------------------------------------------------- | -------------------------------------- |
-| Prompt 工程  | System prompt + 动态 prompt 包装 + few-shot 风格示例                 | 控制角色、语气、输出边界和默认回答风格 |
-| 上下文管理   | 短期最近消息 + 中期滚动摘要                                          | 避免完整历史塞满 Nano 上下文窗口       |
-| 持久化实现   | IndexedDB 保存初始化状态、完整消息和会话摘要                         | 刷新或重新打开后恢复历史和压缩记忆     |
-| 推理参数优化 | `temperature = 0.4`、`topK = 32`，并按 `LanguageModel.params()` 裁剪 | 提高摘要、翻译、润色、问答场景的稳定性 |
-| 工作流拆解   | 动态 prompt 要求复杂任务先拆成 2-4 个小步骤再执行                    | 降低复杂任务一次性处理失败或发散的概率 |
-| 右键菜单集成 | 选中文本后通过 context menu 生成任务 prompt，并打开全屏 AI 助手      | 减少复制粘贴，提高网页文本处理效率     |
+| 功能 | 用户侧表现 | 实现位置 |
+| --- | --- | --- |
+| 本机模型初始化 | 首次使用时点击“初始化”，模型可用后进入对话 | `src/popup/main.tsx`、`src/options/main.tsx`、`src/sidepanel/main.tsx`、`src/shared/aiAssistant/chromeLanguageModel.ts` |
+| 全屏对话 | 在独立页面中连续聊天，左侧展示历史对话 | `src/options/main.tsx` |
+| 侧边栏对话 | 在 Chrome Side Panel 中边浏览网页边聊天 | `src/sidepanel/main.tsx` |
+| 右键选中文本处理 | 选中网页文本后可摘要、翻译、解释、改写 | `src/background/main.ts`、`src/shared/aiAssistant/contextPrompt.ts` |
+| 当前页面内容读取 | 在侧边栏提问“总结当前页面”等问题时读取当前 Tab 正文 | `src/shared/chrome/pageContent.ts`、`src/sidepanel/main.tsx` |
+| 本地知识库 | 保存常用信息、文档、FAQ，提问时自动检索相关片段 | `src/shared/aiAssistant/knowledgeBase.ts`、`src/popup/main.tsx` |
+| 聊天内写入知识库 | 对话中说“记住/保存到知识库”，确认后写入本地知识库 | `src/options/main.tsx`、`src/sidepanel/main.tsx` |
+| 上下文管理 | 保留最近对话和滚动摘要，支持连续追问 | `src/shared/aiAssistant/chromeLanguageModel.ts`、`src/shared/aiAssistant/storage.ts` |
+| 对话历史持久化 | 保存最多 30 条历史会话，刷新后可恢复 | `src/shared/aiAssistant/storage.ts` |
+| 流式输出 | AI 回复逐步显示，失败和超时有提示 | `src/shared/aiAssistant/chromeLanguageModel.ts` |
+| 键盘快捷键 | `Enter` 发送，`Shift + Enter` 换行 | `src/options/main.tsx`、`src/sidepanel/main.tsx` |
 
-其中，持久化实现详见“上下文策略 / 持久化实现”，推理参数优化详见“推理参数策略”。
+## 适合与不适合的场景
 
-## 适用场景
+适合：
 
-这套方案适用于基于浏览器内置 `LanguageModel` / Gemini Nano 的轻量 AI 助手，尤其适合：
+- 文本摘要、信息提炼、要点整理。
+- 中英文互译、多语言短文本处理。
+- 写作辅助、润色、改写。
+- 当前网页内容的轻量问答和总结。
+- 基于本地知识库的个人信息、常用流程、FAQ 问答。
+- 隐私敏感但不需要云端大模型能力的轻量任务。
 
-- 本地优先的浏览器插件。
-- 不依赖云端模型的隐私敏感文本工具。
-- 摘要、翻译、润色、信息提炼、轻量问答等任务。
-- 需要流式输出和连续对话的简单聊天界面。
+不适合：
 
-不适合直接用于：
+- 联网搜索、实时新闻、最新资料查询。
+- 复杂推理、专业领域判断、严肃法律/医疗/财务建议。
+- 大规模长文深度分析。
+- 严格要求稳定 JSON 或机器可解析格式的自动化流程。
+- 替代云端大模型做复杂规划或多工具智能体任务。
 
-- 专业领域强推理。
-- 需要联网搜索或实时知识的问答。
-- 严格结构化输出任务，例如必须返回可解析 JSON 的流程。
-- 需要长上下文、高一致性、多轮复杂规划的智能体。
+## 普通用户怎么用
 
-## 设计原则
+### 1. 首次初始化
 
-### 1. 默认自然对话
+打开扩展 Popup，进入“AI 助手”。
 
-本地小模型容易被示例和格式要求带偏。如果 prompt 里大量出现固定标题，模型会把普通问答也写成报告。
+如果页面提示需要初始化，点击“初始化”。初始化期间可能出现以下状态：
 
-因此默认约束是：
+- 正在检查本机模型状态。
+- 正在下载本机模型。
+- 正在创建本机 AI 会话。
+- 正在预热模型。
 
-- 简单问题直接回答。
-- 不默认使用「核心观点 / 关键数据 / 行动建议」这类标签。
-- 只有用户明确要求总结、对比、计划、清单或表格时，才结构化。
+初始化成功后，状态会保存到本地。后续再打开时会直接进入可用状态。这个状态只是体验缓存，如果浏览器模型不可用或调用失败，系统会重新提示初始化。
 
-### 2. 先设边界，再设格式
+### 2. 打开全屏对话
 
-模型首先需要知道自己不能做什么：
+在 Popup 的 AI 助手区域点击“全屏对话”。
 
-- 不联网。
-- 不确定时要说不确定。
-- 不编造专业判断。
-- 翻译任务直接输出目标语言译文，目标语言优先于默认中文回复规则。
+全屏对话适合长时间聊天和查看历史。页面包含：
 
-格式要求应该服务于任务，而不是压过任务本身。
+- 当前对话区。
+- 左侧历史对话列表。
+- “新对话”入口。
+- 输入框和发送按钮。
 
-### 3. 示例只引导风格，不固定模板
+输入框支持：
 
-Few-shot 示例要短，并且只覆盖高频行为。
+- `Enter` 发送。
+- `Shift + Enter` 换行。
 
-不要给模型一整套固定输出模板，除非这个功能本身就是固定格式生成器。AI 助手是通用对话入口，所以示例更关注“自然、简洁、会分段”。
+如果已经在全屏对话页，再从 Popup 点击“全屏对话”，不会重复打开新页面，会提示“已经在全屏对话了”。
 
-### 4. 上下文要分层
+### 3. 打开侧边栏对话
 
-Gemini Nano 是本地小模型。上下文越长，越容易变慢、超时或丢重点。
+在 Popup 的 AI 助手区域点击“侧边栏对话”。
 
-当前策略不是把完整历史全部塞进 prompt，而是分成两层：
+侧边栏适合边浏览网页边提问。它不会展示完整历史列表，但会加载最近会话，并支持在当前会话中继续提问。
 
-- 短期记忆：最近 6 条消息，完整保留但单条截断。
-- 中期记忆：本次会话的滚动摘要，每轮对话后压缩更新。
+注意：
 
-这样可以支持连续追问，又不会让 prompt 无限增长。
+- 全屏对话页与侧边栏对话互斥。
+- 如果当前 Tab 已经是全屏对话页，再尝试打开 AI 侧边栏，会提示“全屏对话页面不支持侧边栏对话，请切换到普通网页后再打开”。
+- 打开 Popup 时会隐藏侧边栏；打开侧边栏时会关闭 Popup，避免两个入口同时占用界面。
 
-## 当前代码结构
+### 4. 使用右键菜单处理选中文本
 
-核心实现位于：
+在网页中选中一段文本，右键打开 Toolbooox AI 助手菜单。
 
-- `src/shared/aiAssistant/chromeLanguageModel.ts`
+当前支持：
 
-调用入口位于：
+- 摘要：总结选中文本，给出核心结论和关键要点。
+- 翻译：中文翻译成英文，非中文翻译成中文。
+- 解释：用通俗语言解释选中文本的含义和上下文。
+- 改写：让表达更清晰、自然、专业，并保留原意。
 
-- `src/popup/main.tsx`：Popup 内初始化本地模型。
-- `src/options/main.tsx`：全屏 AI 助手对话。
+右键菜单会优先打开 AI 侧边栏，并把处理任务填入输入框。用户可以确认、补充或直接发送。
 
-测试位于：
+如果 Chrome 当前不支持 `sidePanel.open()`，会降级打开 `sidepanel.html`。
 
-- `src/shared/aiAssistant/chromeLanguageModel.test.ts`
+### 5. 让侧边栏读取当前页面
 
-## 模型接入流程
+在侧边栏中可以这样提问：
 
-AI 助手的完整调用链路如下：
+- 总结当前页面。
+- 这篇文章讲了什么？
+- 帮我提取本页的关键数据。
+- What is this page about?
 
-1. 用户点击初始化。
-2. 调用 `LanguageModel.availability(...)` 检查模型是否可用。
-3. 调用 `LanguageModel.create(...)` 创建 session，并传入 system prompt。
-4. 使用一个短 prompt 预热模型。
-5. 用户发送消息。
-6. 使用 `createAiAssistantPrompt(...)` 包装用户输入、会话摘要和最近上下文。
-7. 调用 `session.promptStreaming(...)` 流式输出。
-8. 对本轮问答生成新的滚动摘要。
-9. 将用户消息、助手回复和会话摘要保存到本地会话历史。
+当问题命中“当前页面 / 这篇文章 / this page / webpage”等语义时，侧边栏会尝试读取当前 Tab 的页面标题、URL 和正文，并把内容注入给模型。
 
-## Chrome API 参数声明
+限制：
 
-Chrome Prompt API 要求声明预期输出语言，否则扩展错误页会记录类似警告：
+- 只能读取普通网页。
+- `chrome://`、扩展页、权限受限页面可能无法读取。
+- 页面正文最多注入 12,000 字符，超出会截断。
+- 如果无法读取，会提示“无法读取当前页面内容，请在普通网页中重试”。
+
+### 6. 使用本地知识库
+
+本地知识库用于保存希望 AI 记住的资料，例如：
+
+- 个人偏好和基本信息。
+- 常用业务流程。
+- FAQ。
+- 固定术语翻译。
+- 常用文档片段。
+
+在 Popup 的 AI 助手区域可以新增、编辑、删除本地知识。每条知识包含：
+
+- 标题。
+- 标签，可选，多个标签用逗号分隔。
+- 内容。
+
+保存后的知识存放在本地 IndexedDB，不上传云端。
+
+提问时，AI 助手会自动用关键词检索本地知识库，最多取 3 个相关片段注入上下文。如果问题是翻译类请求，会跳过知识库检索，避免知识库内容干扰翻译。
+
+### 7. 在聊天里写入知识库
+
+用户也可以直接在对话中要求保存信息，例如：
+
+```text
+我的宠物薯条是银渐层，帮我记到知识库
+```
+
+AI 助手会先生成一条待确认信息，提示用户回复“确认”保存，或回复“取消”放弃。
+
+确认后，内容写入本地知识库；取消后不会保存。
+
+这一步需要确认，是为了避免用户普通聊天内容被误写入长期知识。
+
+## 用户侧行为规则
+
+### 对话与入口互斥
+
+当前有三个与 AI 助手相关的界面：
+
+- Popup：负责初始化入口、全屏/侧边栏入口、本地知识库管理。
+- 全屏对话页：负责完整对话和历史列表。
+- 侧边栏：负责窄屏持续对话、右键选中文本处理、当前页面读取。
+
+互斥规则：
+
+- 打开 Popup 时隐藏侧边栏。
+- 从 Popup 打开侧边栏时关闭 Popup。
+- 全屏对话页 active 时禁止打开 AI 侧边栏。
+- 已经在全屏对话页时，点击“全屏对话”不重复新开页面。
+
+### 右键快捷操作复用当前会话
+
+右键选中文本触发 AI 侧边栏时，会复用当前侧边栏对话。
+
+如果侧边栏已有活跃会话，新的右键任务会填入当前会话输入框，不会强制新建会话，也不会清空已有消息。只有用户主动点击“新对话”才会清空当前对话状态。
+
+### 翻译规则
+
+翻译类请求有最高优先级：
+
+- 中文文本翻译成英文。
+- 非中文文本翻译成中文。
+- 用户指定目标语言时，按指定目标语言输出。
+- 直接输出译文，不额外解释。
+- 禁止原样返回源文本。
+- 翻译请求跳过本地知识库检索。
+
+## 开发者快速地图
+
+### 核心模块
+
+```text
+src/shared/aiAssistant/
+  chromeLanguageModel.ts   # Chrome LanguageModel 接入、Prompt 构造、流式输出、摘要
+  storage.ts               # 初始化状态、会话历史、滚动摘要持久化
+  contextPrompt.ts         # 右键菜单/外部入口生成的临时 prompt
+  knowledgeBase.ts         # 本地知识库 CRUD、解析保存意图、检索和知识 prompt
+
+src/shared/chrome/
+  pageContent.ts           # 当前页面正文读取和页面上下文 prompt
+
+src/background/
+  main.ts                  # 右键菜单注册、选中文本任务生成、侧边栏打开
+
+src/popup/
+  main.tsx                 # Popup 初始化入口、全屏/侧边栏入口、本地知识库管理
+
+src/options/
+  main.tsx                 # 全屏 AI 对话、历史会话、知识库注入、滚动摘要
+
+src/sidepanel/
+  main.tsx                 # 侧边栏 AI 对话、右键任务承接、当前页面读取
+```
+
+### 数据存储
+
+| 数据 | 存储位置 | 说明 |
+| --- | --- | --- |
+| 初始化状态 | IndexedDB key-value，key 为 `toolbooox.aiAssistant.initialized` | 只作为启动体验缓存 |
+| 会话历史 | IndexedDB `toolbooox.aiAssistant` / `conversations` | 最多保留 30 条会话 |
+| 会话摘要 | `AiAssistantConversation.summary` | 每轮对话后滚动更新 |
+| 临时右键 Prompt | `chrome.storage.local` key 为 `toolbooox.aiAssistant.contextPrompt` | 读取后立即删除 |
+| 本地知识库 | IndexedDB `toolbooox.aiAssistantKnowledge` / `knowledgeItems` | 最多规范化保留 100 条 |
+
+卸载扩展会清除这些本地数据，包括 IndexedDB、`chrome.storage.local` 和其他扩展本地存储。
+
+## 模型接入实现
+
+核心代码位于 `src/shared/aiAssistant/chromeLanguageModel.ts`。
+
+完整调用链：
+
+1. UI 调用 `initializeChromeLanguageModel(...)`。
+2. 通过 `LanguageModel.availability(...)` 检查模型是否可用。
+3. 通过 `LanguageModel.create(...)` 创建 session。
+4. 传入 system prompt、语言声明和采样参数。
+5. 用 `Reply with OK.` 做预热。
+6. 用户发送消息。
+7. 调用 `createAiAssistantPrompt(...)` 包装用户输入、短期历史和滚动摘要。
+8. 优先调用 `session.promptStreaming(...)` 流式输出。
+9. 如果当前 session 不支持流式输出，降级到 `session.prompt(...)`。
+10. 回复完成后调用 `summarizeAiAssistantConversationTurn(...)` 更新滚动摘要。
+11. 将完整消息和摘要保存到 IndexedDB。
+
+### Chrome API 兼容
+
+当前同时兼容两个入口：
+
+```ts
+globalThis.LanguageModel
+globalThis.ai?.languageModel
+```
+
+可用性判断接受这些状态：
+
+```text
+available
+downloadable
+downloading
+readily
+after-download
+```
+
+不可用时 UI 会提示当前 Chrome 暂不支持内置 AI 助手或模型不可用。
+
+### 语言声明
+
+Chrome Prompt API 要求声明输出语言，否则扩展错误页可能出现警告：
 
 ```text
 No output language was specified in a LanguageModel API request.
 ```
 
-当前实现使用一份共享配置：
+当前实现：
 
 ```ts
+const LANGUAGE_MODEL_DECLARED_OUTPUT_LANGUAGE = "en";
+
 const LANGUAGE_MODEL_TEXT_OPTIONS = {
   expectedOutputs: [{ type: "text", languages: ["en"] }],
-  outputLanguage: "en",
+  outputLanguage: "en"
 };
 ```
 
-这份配置必须同时传给：
+这份配置同时传给：
 
 ```ts
 LanguageModel.availability(LANGUAGE_MODEL_TEXT_OPTIONS);
 LanguageModel.create({
   ...LANGUAGE_MODEL_TEXT_OPTIONS,
   systemPrompt,
-  monitor,
+  monitor
 });
 ```
 
-注意：这里的 `outputLanguage: "en"` 是 Chrome API 的能力声明，不等于业务输出语言。业务层默认要求模型用中文回复，但翻译任务会以用户指定的目标语言为准。
+注意：这里的 `outputLanguage: "en"` 是 Chrome API 能力声明，不等于业务回复语言。业务层仍通过 Prompt 要求默认中文回复，翻译任务则按目标语言输出。
 
-当前没有声明 `expectedInputs`。原因是部分 Chrome 版本只报告支持 `[en, es, ja]`，而 Toolbooox 的系统提示和用户输入主要是中文。强行声明中文输入可能导致 API 判定不支持。
+当前没有声明 `expectedInputs`。原因是部分 Chrome 版本只报告支持有限输入语言，强行声明中文输入可能导致可用性判断失败。
 
-复用时建议：
-
-- 如果你的业务输出是英文，保留 `en`。
-- 如果你的 Chrome 版本明确支持目标语言，可以改成对应语言。
-- `availability()` 和 `create()` 必须保持一致。
-- 不要只改 `create()`，否则初始化检查阶段仍可能产生警告。
-
-## System Prompt 模板
-
-System prompt 用于设置整个 session 的基础行为，只在创建 session 时传入一次。
-
-当前模板：
+### 超时策略
 
 ```ts
-const AI_ASSISTANT_SYSTEM_PROMPT = [
-  "你是我的个人浏览器助手，名字叫「小助」。",
-  "工作原则：",
-  "1. 默认用中文回复，语气友好但专业；翻译任务必须按用户指定的目标语言输出。",
-  "2. 默认像正常对话一样回答，不要套固定模板。",
-  "3. 回答简洁，优先给结论；普通问题不超过 3 句话。",
-  "4. 需要展开时使用自然段落、列表或表格；段落之间保留空行。",
-  "5. 不确定的内容直接说「不确定」，不编造。",
-  "6. 涉及代码、命令或结构化数据时，保持格式清晰。",
-  "7. 翻译任务直接给出译文，除非用户要求解释；目标语言优先于默认中文回复规则。",
-].join("\n");
+const LANGUAGE_MODEL_CREATE_TIMEOUT_MS = 120_000;
+const LANGUAGE_MODEL_PROMPT_TIMEOUT_MS = 20_000;
+const LANGUAGE_MODEL_MEMORY_TIMEOUT_MS = 4_000;
+const LANGUAGE_MODEL_WARMUP_TIMEOUT_MS = 30_000;
 ```
 
-复用时可以保留结构，替换以下内容：
+含义：
 
-- 助手名字。
-- 回复语言。
-- 适用任务。
-- 禁止事项。
-- 格式偏好。
+- 创建 session 可能包含下载和加载，允许 120 秒。
+- 正常 Prompt 限制 20 秒。
+- 滚动摘要是辅助能力，只允许 4 秒。
+- 预热允许 30 秒。
 
-建议不要在 system prompt 里加入过多业务细节。业务细节更适合放到每次请求的动态 prompt 里。
+摘要失败不会中断正常对话。
 
-## 动态 Prompt 模板
+### 采样参数
 
-用户每次提问时，不直接把用户输入传给模型，而是先包装成一个更完整的任务说明。
-
-当前结构：
-
-```text
-请处理用户的当前请求。
-
-默认回答风格：
-1. 像自然聊天一样回答，不要默认使用固定标签。
-2. 简单问题直接回答 1-3 句。
-3. 只有用户明确要求总结、对比、计划、清单或表格时，才结构化。
-4. 身份问题简短说明即可，不写成报告。
-5. 翻译任务直接输出目标语言译文，不受默认中文回复规则影响。
-6. 信息不足时说明缺口和下一步。
-
-复杂任务工作流：
-1. 如果当前请求包含多个目标、大段文本整理、方案设计、排错或复杂分析，先把任务拆成 2-4 个小步骤。
-2. 拆解后直接执行这些步骤，不要只给计划；除非用户明确只要计划。
-3. 每个步骤只保留必要结果，避免展开冗长推理过程。
-4. 如果无法在一次回答中完成，先完成最关键的一步，并说明下一步该继续处理什么。
-5. 简单问答、翻译、改写不需要展示工作流，直接给结果。
-
-示例（只学习风格，不要复述示例）：
-用户：你是谁
-助手：我是 Toolbooox 里的本地 AI 助手...
-
-处理步骤（在内部完成，不要逐字展示推理过程）：
-Step 1: 判断任务是简单请求还是复杂请求
-Step 2: 简单请求直接回答；复杂请求先拆成小步骤
-Step 3: 提取最近上下文和压缩记忆中的相关信息
-Step 4: 按步骤生成简洁、准确、边界清晰的回答
-
-本次会话压缩记忆：
-...
-
-最近短期对话上下文：
-用户: ...
-助手: ...
-
-当前用户请求：
-...
-```
-
-这个模板由 `createAiAssistantPrompt(prompt, options)` 生成。
-
-复用时可以按任务类型调整：
-
-- 客服助手：增加产品范围、升级人工客服的条件。
-- 文档助手：增加引用来源、避免超出文档范围。
-- 代码助手：增加语言、框架、输出代码块的要求。
-- 翻译工具：删除普通对话示例，强化只输出译文。
-
-## 工作流拆解策略
-
-Gemini Nano 不适合一次性处理过多目标。对于复杂请求，当前方案不引入额外任务 API，而是在 prompt 层要求模型先拆小任务再执行。
-
-### 触发条件
-
-当用户请求具备以下特征时，模型应按工作流处理：
-
-- 同时包含多个目标，例如“总结、提取数据、给建议”。
-- 输入内容较长，例如网页内容、会议纪要、邮件长文。
-- 需要方案设计、排错、分析、整理。
-- 需要先判断材料，再输出结论。
-
-简单问答、翻译、短句改写不触发工作流，直接给结果。
-
-### 当前实现方式
-
-实现位置仍在 `createAiAssistantPrompt(...)`。它会在动态 prompt 中加入“复杂任务工作流”规则：
-
-```text
-复杂任务工作流：
-1. 如果当前请求包含多个目标、大段文本整理、方案设计、排错或复杂分析，先把任务拆成 2-4 个小步骤。
-2. 拆解后直接执行这些步骤，不要只给计划；除非用户明确只要计划。
-3. 每个步骤只保留必要结果，避免展开冗长推理过程。
-4. 如果无法在一次回答中完成，先完成最关键的一步，并说明下一步该继续处理什么。
-5. 简单问答、翻译、改写不需要展示工作流，直接给结果。
-```
-
-这不是多 API 编排。当前没有自动调用 `Summarizer`、`Writer`、`Proofreader` 等任务 API，也没有把一次用户请求拆成多次真实模型调用。
-
-它的作用是让同一次 Prompt API 调用内部遵循更稳定的处理顺序：
-
-1. 判断任务类型。
-2. 复杂任务拆成小步骤。
-3. 按步骤输出必要结果。
-4. 避免把完整推理过程暴露给用户。
-
-### 达到的效果
-
-用户侧效果：
-
-- 复杂请求不容易被模型一口气写散。
-- 输出更容易按“摘要 / 数据 / 建议”“问题 / 原因 / 处理方式”组织。
-- 当一次回答放不下时，模型会优先完成关键部分，并提示下一步继续处理什么。
-
-开发侧效果：
-
-- 不增加新 API 依赖。
-- 不改变流式输出和会话持久化逻辑。
-- 可以和滚动摘要、短期上下文一起工作。
-
-### 后续可扩展方向
-
-如果后续要做真正的工作流编排，可以在当前 prompt 规则之上增加任务路由层：
-
-- 网页深度整理：先调用 Summarizer API 生成初稿摘要，再用 Prompt API 提取数据和建议。
-- 邮件回复：先用 Language Detector 判断语言，再用 Writer 生成草稿，最后用 Proofreader 检查语气和语法。
-- 代码排错：先提取错误信息，再定位可能原因，最后生成最小修改建议。
-
-这些都属于多 API 或多步骤编排，会增加状态管理、错误恢复和 UI 进度展示成本。当前阶段先采用 prompt 层工作流约束，成本最低。
-
-## 右键菜单集成
-
-右键菜单用于提升网页文本处理效率。用户选中网页文本后，可以通过 Chrome 右键菜单快速进入 AI 助手处理。
-
-当前支持 4 个动作：
-
-- 摘要
-- 翻译
-- 解释
-- 改写
-
-其中“翻译”动作会显式声明目标语言优先：中文选中文本翻译成英文，非中文选中文本翻译成中文。这样可以避免全局“默认中文回复”约束导致中文原文被原样返回。
-
-### 实现方式
-
-右键菜单在后台 Service Worker 中注册，代码位于：
-
-- `src/background/main.ts`
-
-manifest 需要声明：
-
-```json
-"permissions": ["contextMenus"]
-```
-
-菜单只在用户选中文本时出现：
+当前默认：
 
 ```ts
-chrome.contextMenus.create({
-  contexts: ["selection"],
-});
+const LANGUAGE_MODEL_TEMPERATURE = 0.4;
+const LANGUAGE_MODEL_TOP_K = 32;
 ```
 
-点击菜单后，后台脚本会根据动作生成一个结构化任务：
+创建 session 前会调用：
 
 ```ts
-{
-  input: "翻译：\n\n选中文本",
-  prompt: "这是翻译任务，目标语言优先于默认中文回复规则。..."
-}
+LanguageModel.params();
 ```
 
-`input` 是用户可见内容，会显示在输入框和聊天气泡里；`prompt` 是实际发给模型的完整指令。
+如果浏览器返回 `maxTemperature` 或 `maxTopK`，会将默认值裁剪到浏览器支持范围内。
 
-为了避免长文本塞进 URL，当前不会把选中文本直接拼到 `options.html` 查询参数里，而是先临时写入 `chrome.storage.local`：
+这组参数更偏稳定，适合摘要、翻译、轻量问答和润色。当前没有按任务动态创建不同 session，因为这会增加初始化成本和 session 生命周期复杂度。
 
-```ts
-saveAiAssistantContextPrompt({ input, prompt });
-```
+当前没有接入 `maxOutputTokens`。输出长度主要靠 Prompt 约束、上下文截断和超时控制。
 
-然后打开全屏 AI 助手：
+## Prompt 设计
 
-```ts
-options.html?tool=aiAssistant&contextPrompt=1
-```
+### System Prompt
 
-全屏页启动后会调用：
+System prompt 只在创建 session 时传入一次，用于定义助手身份和全局边界。
 
-```ts
-consumeAiAssistantContextPrompt();
-```
+当前核心约束：
 
-读取临时 prompt，并立即删除这条临时数据。
+- 助手名为“小助”。
+- 默认中文回复。
+- 翻译任务必须按目标语言输出。
+- 默认自然对话，不套固定模板。
+- 简单问题不超过 3 句话。
+- 不确定时说不确定，不编造。
+- 代码、命令和结构化数据保持格式清晰。
 
-如果用户没有编辑预填输入，发送时会使用隐藏的 `prompt` 调用模型，但聊天历史只显示干净的 `input`。如果用户手动编辑了输入框，隐藏 prompt 会失效，改为按用户编辑后的内容发送。
+### 动态 Prompt
 
-### 未初始化时的处理
+每次用户提问时，不直接把原文传给模型，而是通过 `createAiAssistantPrompt(prompt, options)` 包装。
 
-右键菜单不要求 AI 模型已经初始化。
+动态 Prompt 包含：
 
-如果用户通过右键菜单打开全屏页时模型还未初始化：
+- 默认回答风格。
+- 翻译规则。
+- 个人信息和本地知识库指代规则。
+- 事实核验规则。
+- 复杂任务工作流。
+- Few-shot 示例。
+- 本次会话滚动摘要。
+- 最近 6 条短期对话。
+- 当前用户请求。
 
-1. 选中文本生成的任务 prompt 会先填入全屏 AI 助手输入框。
-2. 页面显示初始化入口。
-3. 用户点击初始化并完成后，输入框会自动获得焦点。
-4. 光标会移动到预填 prompt 末尾，方便用户确认、补充或直接发送。
+关键目标：
 
-当前不会在初始化完成后自动发送。原因是右键选中的文本可能较长，自动发送会让用户失去确认机会，也可能触发非预期模型调用。
+- 普通问题像自然聊天一样回答。
+- 只有用户明确要求时才使用列表、表格或小标题。
+- 复杂任务拆成 2-4 个小步骤后直接执行。
+- 使用知识库或页面内容时，不暴露“片段”“知识库”“内部证据”等实现细节。
+- 个人信息没有直接证据时，不从历史助手回答里编造。
 
-### 为什么打开全屏页
+### Few-shot 示例原则
 
-当前 AI 助手的对话能力只在全屏页使用，Popup 只负责初始化和入口跳转。
+Few-shot 只用于引导风格，不用于固定格式。
 
-右键菜单不直接在后台运行模型，原因是：
-
-- 模型调用耗时较长，不适合隐藏在 context menu 点击后无反馈执行。
-- 全屏页有完整的初始化状态、流式输出、历史保存和错误提示。
-- 可以复用现有 prompt 工程、上下文管理、滚动摘要和持久化逻辑。
-
-### 文本长度处理
-
-选中文本会在后台做长度限制：
-
-```ts
-const CONTEXT_SELECTION_MAX_LENGTH = 12_000;
-```
-
-超过限制时会截断，并在 prompt 末尾追加提示：
-
-```text
-[选中文本过长，已截断后续内容。]
-```
-
-这样可以避免过长网页内容导致 storage 或模型上下文压力过大。
-
-## Few-shot 示例写法
-
-Few-shot 示例的作用是让模型模仿风格，不是让模型复制格式。
-
-推荐写法：
+推荐：
 
 ```text
 用户：你是谁
@@ -410,21 +394,19 @@ Few-shot 示例的作用是让模型模仿风格，不是让模型复制格式�
 我不联网，所以更适合处理你直接给我的文本。
 ```
 
-不推荐写法：
+不推荐：
 
 ```text
-用户：你是谁
-助手：
 【核心观点】...
 【关键数据】...
 【行动建议】...
 ```
 
-后者会让模型把普通问题也回答成报告。
+固定标签会让模型把普通问题也回答成报告。
 
-## 上下文策略
+## 上下文管理
 
-当前实现使用“滚动摘要 + 最近消息”的组合，而不是完整历史。
+Gemini Nano 的上下文窗口有限。当前不把完整历史全部塞给模型，而是使用“短期消息 + 中期摘要”。
 
 ```ts
 const AI_ASSISTANT_CONTEXT_MESSAGE_LIMIT = 6;
@@ -432,19 +414,40 @@ const AI_ASSISTANT_CONTEXT_CONTENT_LIMIT = 1_200;
 const AI_ASSISTANT_SUMMARY_CONTENT_LIMIT = 800;
 ```
 
-### 实现方式总览
+### 短期消息
 
-当前上下文能力由三部分组成：
+短期消息来自最近 6 条用户/助手消息。
 
-1. 会话数据里保存一份可选的 `summary`。
-2. 每次请求模型时，同时注入 `summary` 和最近几条原始消息。
-3. 每轮助手回复完成后，异步生成新的 `summary` 并随会话一起持久化。
+处理方式：
 
-对应代码位置：
+- 过滤空消息。
+- 每条消息最多保留 1,200 字符。
+- 格式化为 `用户: ...` / `助手: ...`。
 
-- `src/shared/aiAssistant/storage.ts`：定义和持久化 `AiAssistantConversation.summary`。
-- `src/shared/aiAssistant/chromeLanguageModel.ts`：构造上下文 prompt，并生成滚动摘要。
-- `src/options/main.tsx`：在发送消息时传入摘要，在回复完成后更新摘要。
+作用：
+
+- 支持“继续”“刚才第二点”“那这个呢”等连续追问。
+- 保留最近几轮的原文细节。
+
+### 滚动摘要
+
+每轮回复结束后，系统会用模型生成一段 1-2 句的中文压缩记忆，写入 `AiAssistantConversation.summary`。
+
+摘要要求：
+
+- 只保留对后续对话有帮助的信息。
+- 合并旧摘要和本轮新增信息。
+- 不加入用户没有表达过的偏好或事实。
+- 不使用标题、列表或解释。
+
+实现细节：
+
+- 优先使用 `session.clone()` 做摘要，避免污染主对话 session。
+- 摘要请求超时为 4 秒。
+- 摘要失败时沿用旧摘要；没有旧摘要则不写入。
+- 旧版本会话没有 `summary` 字段也能正常读取。
+
+### 会话持久化
 
 会话结构：
 
@@ -459,415 +462,394 @@ export type AiAssistantConversation = {
 };
 ```
 
-`summary` 是可选字段，旧版本历史会话没有这个字段也能正常读取。读取 IndexedDB 时会通过 `normalizeConversation` 做兼容处理：
+保存时会：
 
-```ts
-summary: typeof conversation.summary === "string" ? conversation.summary : undefined,
-```
+- 过滤非法会话。
+- 按 `updatedAt` 倒序排序。
+- 最多保留 30 条。
+- 清空并重写 `conversations` object store。
 
-### 短期记忆
+## 右键菜单实现
 
-短期记忆来自最近几条原始消息，用于处理当前追问、指代和上下文衔接。
+右键菜单在 `src/background/main.ts` 中注册，需要 manifest 声明：
 
-格式化后的短期上下文：
-
-```text
-用户: 第一轮问题
-助手: 第一轮回答
-```
-
-实现函数是 `formatPromptHistory(...)`。它会：
-
-- 过滤空内容消息。
-- 只取最近 `AI_ASSISTANT_CONTEXT_MESSAGE_LIMIT` 条。
-- 将单条内容压缩到 `AI_ASSISTANT_CONTEXT_CONTENT_LIMIT` 字符以内。
-- 按角色格式化成 `用户: ...` / `助手: ...`。
-
-短期记忆的效果是保留最近对话的原文细节。例如用户连续追问“那刚才第二点呢”，模型还能看到最近几轮的完整表达。
-
-### 中期记忆
-
-中期记忆保存在会话的 `summary` 字段中。每轮助手回复完成后，会调用模型把旧摘要和本轮问答压缩成 1-2 句。
-
-摘要 prompt 的目标是：
-
-- 只保留对后续对话有帮助的信息。
-- 合并旧摘要和本轮新增信息。
-- 输出 1-2 句中文摘要。
-- 不加入用户没有表达过的偏好或事实。
-
-实现上优先使用 `session.clone()` 生成摘要，避免内部摘要请求污染主对话 session。如果当前 Chrome 不支持 clone，则降级为 best-effort；摘要失败不影响正常对话。
-
-具体流程：
-
-1. 用户发起提问。
-2. `options/main.tsx` 从当前会话读取 `currentConversation?.summary`。
-3. 调用 `askChromeLanguageModelStreaming(...)` 时传入：
-
-```ts
+```json
 {
-  conversationSummary: currentConversation?.summary,
-  messages: aiAssistantMessages
+  "permissions": ["contextMenus", "sidePanel", "storage"]
 }
 ```
 
-4. `createAiAssistantPrompt(...)` 将摘要注入到正式 prompt：
-
-```text
-本次会话压缩记忆：
-...
-
-最近短期对话上下文：
-用户: ...
-助手: ...
-```
-
-5. 助手回复完成后，调用 `summarizeAiAssistantConversationTurn(...)`：
+菜单只在选中文本时出现：
 
 ```ts
-const nextSummary = await summarizeAiAssistantConversationTurn({
-  previousSummary: currentConversation?.summary,
-  userPrompt: prompt,
-  assistantAnswer: nextAnswer,
-}).catch(() => currentConversation?.summary ?? "");
+chrome.contextMenus.create({
+  contexts: ["selection"]
+});
 ```
 
-6. 保存会话时把 `summary: nextSummary || undefined` 一起写入 IndexedDB。
-
-摘要生成使用的内部 prompt 会要求模型：
-
-```text
-请为本次本地 AI 助手会话维护一份压缩记忆。
-
-要求：
-1. 只保留对后续对话有帮助的信息。
-2. 合并旧摘要和本轮新增信息。
-3. 输出 1-2 句中文摘要，不要使用标题、列表或解释。
-4. 不要加入用户没有表达过的偏好或事实。
-```
-
-生成后的摘要还会经过 `normalizeMemorySummary(...)` 清理：
-
-- 去掉首尾引号。
-- 合并多余空白。
-- 截断到 `AI_ASSISTANT_SUMMARY_CONTENT_LIMIT`。
-
-### 失败降级
-
-摘要生成是辅助能力，不是主链路能力。
-
-因此当前实现采用 best-effort 策略：
-
-- 摘要生成失败时，不中断用户刚刚完成的对话。
-- 保存会话时沿用旧摘要。
-- 如果没有旧摘要，则不写入 `summary` 字段。
-
-这段逻辑在 `options/main.tsx` 中体现为：
+当前动作：
 
 ```ts
-const nextSummary = await summarizeAiAssistantConversationTurn(...).catch(
-  () => currentConversation?.summary ?? ""
-);
+type AiAssistantContextMenuAction =
+  | "summarize"
+  | "translate"
+  | "explain"
+  | "rewrite";
 ```
 
-这样可以避免 Nano 短暂超时、clone 不可用或摘要 prompt 失败时影响正常聊天。
-
-### 持久化实现
-
-AI 助手当前有两类持久化数据：初始化状态和对话历史。
-
-#### 初始化状态
-
-初始化状态用于记录本机模型是否已经初始化过，属于体验缓存，不是核心业务数据。
-
-相关代码：
+点击后会生成：
 
 ```ts
-const AI_ASSISTANT_INITIALIZED_STORAGE_KEY =
-  "toolbooox.aiAssistant.initialized";
+type AiAssistantContextPrompt = {
+  readonly input: string;
+  readonly prompt: string;
+};
 ```
 
-读写入口：
+- `input`：展示给用户和保存到聊天气泡的文本。
+- `prompt`：实际发给模型的完整任务指令。
+
+为了避免长文本塞入 URL，右键任务会先写入 `chrome.storage.local`，然后打开侧边栏。侧边栏启动或收到消息后调用 `consumeAiAssistantContextPrompt()` 读取并删除临时任务。
+
+选中文本最大长度：
 
 ```ts
-getSavedAiAssistantInitialized();
-saveAiAssistantInitialized(isInitialized);
+const CONTEXT_SELECTION_MAX_LENGTH = 12_000;
 ```
 
-这部分数据存放在通用 key-value IndexedDB 中。写入失败时会静默降级，避免因为缓存状态失败影响 AI 助手初始化。
+超出后会截断，并追加“选中文本过长，已截断后续内容”。
 
-#### 对话历史
+## 当前页面内容读取实现
 
-对话历史使用独立 IndexedDB：
+页面读取逻辑位于 `src/shared/chrome/pageContent.ts`。
+
+触发条件由 `shouldUseActivePageContent(prompt)` 判断，命中这些语义时读取页面：
+
+- 当前页面、当前网页、当前网站、当前内容、当前文章。
+- 这个页面、这篇文章、本页内容。
+- current page、this page、webpage。
+
+读取方式：
 
 ```ts
-const DATABASE_NAME = "toolbooox.aiAssistant";
-const CONVERSATION_STORE_NAME = "conversations";
+chrome.scripting.executeScript({
+  target: { tabId },
+  func: () => ({
+    title: document.title,
+    url: window.location.href,
+    text: document.body?.innerText ?? ""
+  })
+});
 ```
 
-每条会话同时保存完整消息和滚动摘要：
+manifest 需要包含：
+
+```json
+{
+  "permissions": ["scripting", "activeTab"]
+}
+```
+
+注入给模型的页面上下文包含：
+
+- 页面标题。
+- 页面 URL。
+- 页面正文。
+- 用户问题。
+
+页面正文最大长度：
 
 ```ts
-export type AiAssistantConversation = {
+const PAGE_CONTENT_MAX_LENGTH = 12_000;
+```
+
+如果无法读取或正文为空，侧边栏会给出明确提示，不让模型假装读过页面。
+
+## 本地知识库实现
+
+本地知识库位于 `src/shared/aiAssistant/knowledgeBase.ts`。
+
+### 数据结构
+
+```ts
+export type AiAssistantKnowledgeItem = {
   readonly id: string;
   readonly title: string;
-  readonly summary?: string;
-  readonly messages: AiAssistantStoredMessage[];
+  readonly content: string;
+  readonly tags: string;
   readonly createdAt: string;
   readonly updatedAt: string;
 };
 ```
 
-保存入口：
+IndexedDB：
 
 ```ts
-saveAiAssistantConversations(conversations);
+const DATABASE_NAME = "toolbooox.aiAssistantKnowledge";
+const KNOWLEDGE_STORE_NAME = "knowledgeItems";
+const MAX_KNOWLEDGE_ITEMS = 100;
 ```
 
-保存时会先执行 `normalizeConversations(...)`：
+### CRUD
 
-- 过滤非法会话。
-- 最多保留 30 条会话。
-- 按 `updatedAt` 倒序排序。
-- 清空 `conversations` object store。
-- 将清洗后的会话列表重新写入 IndexedDB。
+Popup 提供本地知识的可视化管理：
 
-读取入口：
+- 新增。
+- 编辑。
+- 删除。
+- 空状态提示。
+- 标题和内容必填校验。
+
+代码入口：
 
 ```ts
-getAiAssistantConversations();
+getAiAssistantKnowledgeItems();
+saveAiAssistantKnowledgeItem(draft, existingItem);
+deleteAiAssistantKnowledgeItem(itemId);
 ```
 
-读取时也会执行 normalize，确保旧数据和异常数据不会直接进入 UI。`summary` 是可选字段，所以旧版本历史会话没有摘要也可以正常恢复。
+### 聊天内保存
 
-#### 摘要如何落盘
+`parseAiAssistantKnowledgeSaveRequest(prompt)` 会识别这些意图：
 
-每轮助手回复完成后，`options/main.tsx` 会生成新的 `nextSummary`，然后和完整消息一起保存：
+- 记住。
+- 保存。
+- 写到知识库。
+- 记录到记忆。
+- 保存个人信息。
+
+识别到后不会立即写库，而是创建待确认草稿。用户回复“确认/保存/记住”等才会保存；回复“取消/不用/放弃”等会丢弃。
+
+### 检索策略
+
+当前没有使用 embedding 或向量检索，因为 Chrome Nano 暂无稳定 embedding API。
+
+现有方案是轻量关键词/BM25 风格匹配：
+
+- 英文和数字按 token 匹配。
+- 中文按 bigram 分词。
+- 标题和标签命中加权。
+- 内容超过 700 字符会分块。
+- 分块之间有 120 字符重叠。
+- 最多返回 Top 3 片段。
+
+关键配置：
 
 ```ts
-await persistAiAssistantConversation({
-  id: conversationId,
+const MAX_KNOWLEDGE_SNIPPETS = 3;
+const KNOWLEDGE_CHUNK_LENGTH = 700;
+const KNOWLEDGE_CHUNK_OVERLAP = 120;
+```
+
+翻译类请求通过 `shouldUseAiAssistantKnowledge(query)` 跳过检索：
+
+```text
+翻译:
+translate:
+translation:
+```
+
+### 知识 Prompt
+
+检索命中后，`createAiAssistantKnowledgePrompt(...)` 会把片段包装到模型请求中。
+
+关键规则：
+
+- 片段是内部证据，最终回答不能提到检索过程。
+- “我”“我的”指用户本人，回答时用“你”“你的”转述。
+- 涉及宠物时统一称为“你的宠物”。
+- 事实核验必须有直接证据。
+- 如果没有足够信息，直接说不知道，不编造。
+
+如果问题涉及个人信息或宠物信息，但知识库没有命中，`createAiAssistantKnowledgeMissingPrompt(...)` 会要求模型自然回答：
+
+```text
+我不知道呀，我这里没有这方面的信息。
+```
+
+## 全屏对话与侧边栏对话的差异
+
+| 能力 | 全屏对话 | 侧边栏对话 |
+| --- | --- | --- |
+| 连续聊天 | 支持 | 支持 |
+| 历史列表 | 支持 | 不展示完整列表，默认加载最近会话 |
+| 新对话 | 支持 | 支持 |
+| 右键菜单承接 | 可通过临时 prompt 机制承接，但当前右键优先侧边栏 | 优先承接 |
+| 当前页面内容读取 | 不主动读取 | 支持 |
+| 输入快捷键 | `Enter` 发送，`Shift + Enter` 换行 | `Enter` 发送，`Shift + Enter` 换行 |
+| 本地知识库检索 | 支持 | 支持 |
+| 聊天内写入知识库 | 支持 | 支持 |
+
+## UI 与交互约束
+
+开发时需要保持以下约束：
+
+- 全屏对话页与侧边栏对话互斥。
+- Popup 与侧边栏互斥。
+- 右键快捷操作必须复用当前侧边栏会话，不能自动重置会话。
+- 输入框必须支持 `Enter` 发送、`Shift + Enter` 换行。
+- 发送按钮旁必须显示快捷键提示。
+- 操作失败要用明确文案提示，不要静默失败。
+- 侧边栏 AI 模式外层需要固定高度，消息列表作为内部滚动容器。
+
+关键样式约束：
+
+- `.sidepanel-shell-ai` 固定为 `100vh` 并隐藏外层溢出。
+- `.ai-sidepanel-chat-list` 是侧边栏 AI 消息滚动容器。
+- 侧边栏输入框默认高度为 `112px`，最大高度为 `38vh`。
+
+## 如何基于这套方案开发新能力
+
+### 新增一个 AI 入口
+
+推荐复用现有临时 prompt 机制：
+
+1. 根据业务生成 `AiAssistantContextPrompt`。
+2. 调用 `saveAiAssistantContextPrompt({ input, prompt })`。
+3. 打开全屏页或侧边栏。
+4. 目标页面调用 `consumeAiAssistantContextPrompt()`。
+5. 如果用户未修改输入框，发送隐藏的模型 prompt；如果用户修改了输入框，按用户编辑内容发送。
+
+这样可以避免把长文本塞进 URL，也能保持聊天历史干净。
+
+### 新增一个右键动作
+
+需要修改：
+
+- `AI_ASSISTANT_CONTEXT_MENU_ACTIONS`
+- `AiAssistantContextMenuAction`
+- `createAiAssistantContextPrompt(action, selectionText)`
+- 对应测试或手动验证用例
+
+如果新增动作是翻译、结构化抽取、代码解释等容易被默认中文规则影响的任务，必须在 action prompt 中写清楚输出语言和输出格式。
+
+### 新增一种知识库来源
+
+推荐仍写入 `AiAssistantKnowledgeItem`：
+
+```ts
+{
   title,
-  summary: nextSummary || undefined,
-  messages: [
-    ...aiAssistantMessages,
-    userMessage,
-    {
-      id: assistantMessageId,
-      role: "assistant",
-      content: nextAnswer,
-    },
-  ],
+  content,
+  tags,
   createdAt,
-  updatedAt: new Date().toISOString(),
-});
+  updatedAt
+}
 ```
 
-这意味着：
+不要把外部来源无条件塞进每次 prompt。应先检索，只注入当前问题相关的 Top 片段。
 
-- `messages` 保存完整对话，用于历史查看。
-- `summary` 保存压缩记忆，用于下一轮 prompt 注入。
-- 刷新或重新打开全屏页后，会话摘要会随历史会话一起恢复。
+### 新增页面上下文能力
 
-### 达到的效果
+如果要读取更多页面信息，比如 meta、选区、表格或链接，建议扩展 `ActivePageContent`，并继续通过 `createActivePageContextPrompt(...)` 统一包装。
 
-这套上下文管理解决的是 Gemini Nano 上下文窗口短的问题。
+要注意：
 
-用户侧效果：
+- 受保护页面无法读取。
+- 读取结果必须截断。
+- 没有读取到内容时必须明确提示用户。
+- 不要让模型在没有页面内容时假装已经读取。
 
-- 长对话不会把所有历史都塞进下一轮 prompt，响应更稳定。
-- 最近几轮细节仍然保留，适合处理“继续”“刚才那个”“第二点”等追问。
-- 较早的关键信息会被压缩进摘要，不会因为只取最近消息而完全丢失。
-- 摘要失败时用户无感知，最多只是下一轮少一点中期记忆。
+### 调整 Prompt
 
-开发侧效果：
+修改 Prompt 时建议按顺序处理：
 
-- prompt 长度有上限，降低超时概率。
-- 会话历史仍完整保存，摘要只是额外字段，不破坏原始记录。
-- 旧数据兼容，不需要 IndexedDB 版本迁移。
-- 后续可以单独调摘要 prompt、短期消息数量或摘要长度。
+1. 判断要修的是语气、格式、翻译、知识库、上下文还是 API 兼容。
+2. 一次只改一个维度。
+3. 更新 `src/shared/aiAssistant/chromeLanguageModel.test.ts` 或 `knowledgeBase.test.ts` 的关键断言。
+4. 手动验证全屏对话和侧边栏对话。
+5. 再跑构建和测试。
 
-### 长期记忆
+不要把太多业务细节写进 system prompt。业务规则更适合放到动态 prompt、知识 prompt 或具体入口 prompt 中。
 
-长期记忆指用户偏好、常用信息、固定背景等跨会话内容。当前 AI 助手没有自动维护长期记忆。
+## 常见问题排查
 
-如果后续要实现长期记忆，建议：
+### 初始化失败
 
-- 使用独立存储结构维护。
-- 让用户可查看、编辑和删除。
-- 只在当前问题相关时注入。
-- 不把所有长期记忆无条件塞进 prompt。
+检查：
 
-复用建议：
-
-- 轻量聊天：4-8 条消息通常够用。
-- 摘要或长文本场景：降低历史条数，避免和正文抢上下文。
-- 严格任务流程：不要只依赖自然语言历史，关键状态应存成结构化数据。
-
-## 超时策略
-
-当前超时配置：
-
-```ts
-const LANGUAGE_MODEL_CREATE_TIMEOUT_MS = 120_000;
-const LANGUAGE_MODEL_PROMPT_TIMEOUT_MS = 20_000;
-const LANGUAGE_MODEL_WARMUP_TIMEOUT_MS = 30_000;
-```
-
-含义：
-
-- 创建 session 可能包含模型下载或加载，允许更长时间。
-- 单次 prompt 控制在 20 秒，兼顾右键长文本、首次生成和本地模型响应速度。
-- 预热只确认模型可用，不参与正式对话。
-
-复用时建议根据交互方式调整：
-
-- Popup 小窗口：prompt 超时应更短。
-- 全屏编辑器：可以适当放宽。
-- 长文总结：建议提供明确的加载状态，而不是只加长超时。
-
-## 推理参数策略
-
-Chrome 扩展中的 Prompt API 支持在创建 `LanguageModel` session 时设置采样参数。当前 AI 助手使用会话级参数，而不是每次提问动态创建新 session。
-
-当前配置：
-
-```ts
-const LANGUAGE_MODEL_TEMPERATURE = 0.4;
-const LANGUAGE_MODEL_TOP_K = 32;
-```
-
-实际传给 `LanguageModel.create(...)` 时，会和语言声明一起传入：
-
-```ts
-LanguageModel.create({
-  ...LANGUAGE_MODEL_TEXT_OPTIONS,
-  temperature,
-  topK,
-  systemPrompt,
-  monitor,
-});
-```
-
-### 参数含义
-
-- `temperature` 控制随机性。值越低，输出越稳定、越少发散。
-- `topK` 控制候选 token 的采样范围。值越低，输出越保守。
-
-个人助手默认选择 `temperature = 0.4`、`topK = 32`，原因是当前主要任务是摘要、翻译、润色、轻量问答。这类任务更需要稳定、简洁和少编造，而不是创意发散。
-
-### 浏览器能力裁剪
-
-不同 Chrome 版本暴露的采样参数上限可能不同。当前实现会优先读取：
-
-```ts
-LanguageModel.params();
-```
-
-如果浏览器返回 `maxTemperature` 或 `maxTopK`，会把默认值裁剪到当前浏览器支持的范围内：
-
-```ts
-temperature = Math.min(0.4, maxTemperature);
-topK = Math.min(32, maxTopK);
-```
-
-如果 `params()` 不存在或调用失败，则使用默认值继续创建 session。
-
-### 为什么不按任务动态调参
-
-Prompt API 的 `temperature` 和 `topK` 是 session 创建参数。当前 AI 助手会缓存并复用同一个 session，以减少初始化成本。
-
-如果每次根据任务动态调参，就需要为不同参数创建不同 session，会带来：
-
-- 更慢的首次响应。
-- 更多本地模型资源占用。
-- 更复杂的 session 缓存和销毁逻辑。
-
-因此当前采用一组适合个人助手的稳定默认值。
-
-如果后续要支持创意写作、头脑风暴等高发散任务，可以考虑维护两类 session：
-
-- 稳定 session：摘要、翻译、代码、问答。
-- 创意 session：脑暴、改写、广告文案。
-
-但这需要额外的 session 生命周期管理，不建议在当前阶段引入。
-
-### 关于 maxOutputTokens
-
-当前没有接入 `maxOutputTokens` 这类硬输出长度参数。
-
-原因是当前 Chrome Prompt API 文档和不同版本实现对该字段的稳定性不如 `temperature` / `topK` 明确。为了避免传入未支持字段导致兼容问题，当前通过 prompt 约束控制输出长度：
-
-- 普通问题不超过 3 句话。
-- 摘要压缩为 1-2 句。
-- 上下文内容按字符数截断。
-- 单次 prompt 设置 20 秒超时。
-
-如果后续 Chrome Prompt API 明确稳定支持输出 token 限制，可以再把它加入 `LanguageModel.create(...)` 或单次 `prompt(...)` 参数中。
-
-## 调参指南
-
-### 回复太生硬
-
-优先检查：
-
-- few-shot 是否太像固定模板。
-- 动态 prompt 是否默认要求列表、小标题或标签。
-- CSS 是否把回复文字设置得过粗。
-- `temperature` / `topK` 是否设置得过低。
+- 当前 Chrome 是否支持内置 `LanguageModel` / Gemini Nano。
+- `LanguageModel.availability(...)` 和 `LanguageModel.create(...)` 是否传入同一份语言声明。
+- 是否缺少 manifest 权限。
+- 扩展错误页是否有 API 参数警告。
 
 ### 回复太啰嗦
 
-优先调整：
+检查：
 
-- system prompt 中的长度限制。
-- 动态 prompt 中简单问题的句数限制。
-- 是否传入了过多历史上下文。
-- 是否需要在 Chrome API 稳定支持后接入输出 token 限制。
+- system prompt 的长度限制。
+- 动态 prompt 是否默认要求列表、小标题或报告格式。
+- 是否传入了过多历史消息或页面内容。
+- 是否需要缩短知识库片段或页面正文长度。
 
 ### 连续追问接不上
 
-优先调整：
+检查：
 
-- `AI_ASSISTANT_CONTEXT_MESSAGE_LIMIT`
-- 会话 `summary` 是否在每轮后正常更新。
-- 上下文格式化方式。
-- 是否在发送消息时传入了当前会话历史。
+- 发送时是否传入当前会话 `messages`。
+- 当前会话 `summary` 是否正常更新和保存。
+- 是否错误调用了 `setActiveAiAssistantConversationId(null)`。
+- 右键快捷操作是否误清空了消息列表。
 
-### 初始化出现 Chrome 扩展错误
+### 翻译原样返回
 
-优先检查：
+检查：
 
-- `LanguageModel.availability(...)` 是否传了语言声明。
-- `LanguageModel.create(...)` 是否传了同一份语言声明。
-- 错误页里的上下文是 `popup.html`、`options.html` 还是 `Service Worker`。
+- 翻译 prompt 是否明确目标语言。
+- 是否写了“不要复制源文本”。
+- 是否跳过了本地知识库检索。
+- 是否被默认中文回复规则覆盖。
 
-## 复用清单
+### 个人信息问答编造
 
-复制这套方案到其他功能时，至少保留以下部分：
+检查：
 
-- 一份 system prompt，用于定义角色、边界和默认风格。
-- 一个动态 prompt 构造函数，用于包装当前请求和上下文。
-- 短期记忆限制，避免完整历史无限增长。
-- 中期滚动摘要，避免丢失本次会话的关键脉络。
-- Chrome API 的 `availability()` 和 `create()` 参数一致性。
-- prompt 构造函数的单元测试，防止关键约束被误删。
+- 知识库是否真的有直接证据。
+- `createAiAssistantKnowledgeMissingPrompt(...)` 是否被触发。
+- 动态 prompt 是否仍要求“没有直接证据就说不知道”。
+- 是否把助手旧回答错误当作事实来源。
 
-不建议直接复制的部分：
+### 当前页面读取失败
 
-- 助手名字「小助」。
-- Toolbooox 相关描述。
-- 中文回复要求，如果目标产品不是中文场景。
-- 20 秒 prompt 超时，如果目标任务是极长文本生成。
+检查：
+
+- 当前 Tab 是否是普通网页。
+- manifest 是否有 `scripting` 和 `activeTab` 权限。
+- `chrome.scripting.executeScript` 是否可用。
+- 页面正文是否为空。
+
+## 验证清单
+
+修改 AI 助手相关逻辑后，至少执行：
+
+```bash
+npm run build
+npm test
+```
+
+建议手动验证：
+
+- Popup 中未初始化、初始化中、初始化完成三种状态。
+- 全屏对话能发送消息、流式输出、保存历史。
+- 侧边栏能发送消息、自动滚动、复用最近会话。
+- `Enter` 发送，`Shift + Enter` 换行。
+- 右键摘要、翻译、解释、改写能填入侧边栏。
+- 翻译中文时输出英文，翻译英文时输出中文，不原样返回。
+- 当前页面读取在普通网页可用，在受限页面有明确提示。
+- 本地知识库可新增、编辑、删除。
+- 聊天内“记住/确认/取消”流程正常。
+- 知识库命中时回答不暴露“片段/知识库/内部证据”等实现词。
 
 ## 维护原则
 
-修改 prompt 时，尽量遵循以下顺序：
+AI 助手当前的定位是本地、轻量、隐私敏感文本助手。开发时优先保证：
 
-1. 先明确要修的是语气、格式、上下文还是 API 兼容。
-2. 只改一个维度，避免无法判断效果来源。
-3. 更新 `chromeLanguageModel.test.ts` 中的关键断言。
-4. 手动验证 Popup 初始化和全屏对话。
-5. 清除 Chrome 扩展错误页旧记录后，再判断是否有新错误。
+- 能力边界清楚。
+- 失败提示明确。
+- Prompt 不过度模板化。
+- 上下文有上限。
+- 本地知识可管理、可删除。
+- 对话历史和长期知识分开存储。
+- 不为了单个场景牺牲翻译、知识库、侧边栏复用等基础行为。
 
-对于 Gemini Nano 这类本地模型，prompt 不宜追求“大而全”。更稳定的做法是：角色约束清晰、任务边界明确、示例短、上下文有限。
+对于 Gemini Nano 这类本地小模型，稳定性通常来自清晰边界、短 Prompt、有限上下文和明确降级，而不是把所有规则都塞进一次请求。
