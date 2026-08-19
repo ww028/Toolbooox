@@ -27,6 +27,7 @@ type Messages = {
   readonly aiAssistantFullscreen: string;
   readonly aiAssistantGenerating: string;
   readonly aiAssistantGuide: string;
+  readonly aiAssistantAlreadyInFullscreen: string;
   readonly aiAssistantInitialize: string;
   readonly aiAssistantInitializationChecking: string;
   readonly aiAssistantInitializationCreating: string;
@@ -39,7 +40,10 @@ type Messages = {
   readonly aiAssistantNewConversation: string;
   readonly aiAssistantNoHistory: string;
   readonly aiAssistantOpenChat: string;
+  readonly aiAssistantPageContextUnavailable: string;
   readonly aiAssistantPopupInitialize: string;
+  readonly aiAssistantSidePanelChat: string;
+  readonly aiAssistantSidePanelUnavailableInFullscreen: string;
   readonly aiAssistantPopupInitializingHint: string;
   readonly aiAssistantPopupGuideLimits: string;
   readonly aiAssistantPopupGuideOffline: string;
@@ -48,6 +52,7 @@ type Messages = {
   readonly aiAssistantPrompt: string;
   readonly aiAssistantPromptPlaceholder: string;
   readonly aiAssistantReadyToChat: string;
+  readonly aiAssistantSendShortcutHint: string;
   readonly aiAssistantThinking: string;
   readonly aiAssistantTimeout: string;
   readonly aiAssistantUnavailable: string;
@@ -249,9 +254,10 @@ export const messages: Record<Locale, Messages> = {
     aiAssistant: "AI 助手",
     aiAssistantEmpty: "暂无对话。",
     aiAssistantFailed: "AI 助手响应失败，请稍后重试。",
-    aiAssistantFullscreen: "全屏使用",
+    aiAssistantFullscreen: "全屏对话",
     aiAssistantGenerating: "正在生成...",
     aiAssistantGuide: "Chrome 内置离线模型，适合摘要、信息提炼、翻译和轻量写作润色；不联网，不适合复杂推理或专业领域判断。",
+    aiAssistantAlreadyInFullscreen: "已经在全屏对话了。",
     aiAssistantInitialize: "初始化本机 AI",
     aiAssistantInitializationChecking: "正在检查本机模型状态...",
     aiAssistantInitializationCreating: "正在创建本机 AI 会话...",
@@ -263,8 +269,11 @@ export const messages: Record<Locale, Messages> = {
     aiAssistantHistory: "历史对话",
     aiAssistantNewConversation: "新对话",
     aiAssistantNoHistory: "暂无历史对话。",
-    aiAssistantOpenChat: "去对话",
+    aiAssistantOpenChat: "全屏对话",
+    aiAssistantPageContextUnavailable: "无法读取当前页面内容，请在普通网页中重试。",
     aiAssistantPopupInitialize: "初始化",
+    aiAssistantSidePanelChat: "侧边栏对话",
+    aiAssistantSidePanelUnavailableInFullscreen: "全屏对话页面不支持侧边栏对话，请切换到普通网页后再打开。",
     aiAssistantPopupInitializingHint: "正在初始化本机 AI，完成后即可进行对话。",
     aiAssistantPopupGuideLimits: "如果你使用它做复杂推理、专业领域的推理你将获得不好的体验",
     aiAssistantPopupGuideOffline: "该模型是 Chrome 浏览器内置的离线模型，不具备联网搜索的功能",
@@ -273,6 +282,7 @@ export const messages: Record<Locale, Messages> = {
     aiAssistantPrompt: "输入内容",
     aiAssistantPromptPlaceholder: "向本机 AI 提问",
     aiAssistantReadyToChat: "初始化完成，可以进行对话了。",
+    aiAssistantSendShortcutHint: "Enter 发送，Shift+Enter 换行",
     aiAssistantThinking: "思考中...",
     aiAssistantTimeout: "AI 助手响应超时，请直接重试。",
     aiAssistantUnavailable: "当前 Chrome 暂不支持内置 AI 助手，或模型不可用。",
@@ -473,9 +483,10 @@ export const messages: Record<Locale, Messages> = {
     aiAssistant: "AI Assistant",
     aiAssistantEmpty: "No conversation yet.",
     aiAssistantFailed: "AI Assistant failed to respond. Try again later.",
-    aiAssistantFullscreen: "Open Fullscreen",
+    aiAssistantFullscreen: "Fullscreen Chat",
     aiAssistantGenerating: "Generating...",
     aiAssistantGuide: "Chrome built-in offline model for summaries, extraction, translation, and light writing polish. It does not search the web and is not suited for complex reasoning or professional judgment.",
+    aiAssistantAlreadyInFullscreen: "Already in fullscreen chat.",
     aiAssistantInitialize: "Initialize Local AI",
     aiAssistantInitializationChecking: "Checking local model status...",
     aiAssistantInitializationCreating: "Creating local AI session...",
@@ -487,8 +498,11 @@ export const messages: Record<Locale, Messages> = {
     aiAssistantHistory: "History",
     aiAssistantNewConversation: "New Chat",
     aiAssistantNoHistory: "No chat history yet.",
-    aiAssistantOpenChat: "Open Chat",
+    aiAssistantOpenChat: "Fullscreen Chat",
+    aiAssistantPageContextUnavailable: "Cannot read the current page content. Try again on a regular webpage.",
     aiAssistantPopupInitialize: "Initialize",
+    aiAssistantSidePanelChat: "Side Panel Chat",
+    aiAssistantSidePanelUnavailableInFullscreen: "Side Panel Chat is not available on the fullscreen chat page. Switch to a regular webpage first.",
     aiAssistantPopupInitializingHint: "Initializing local AI. You can start chatting after it finishes.",
     aiAssistantPopupGuideLimits: "If you use it for complex reasoning or specialized professional reasoning, the experience will be poor.",
     aiAssistantPopupGuideOffline: "This model is an offline model built into Chrome. It does not support web search.",
@@ -497,6 +511,7 @@ export const messages: Record<Locale, Messages> = {
     aiAssistantPrompt: "Message",
     aiAssistantPromptPlaceholder: "Ask the local AI assistant",
     aiAssistantReadyToChat: "Initialization complete. You can start chatting now.",
+    aiAssistantSendShortcutHint: "Enter to send, Shift+Enter for newline",
     aiAssistantThinking: "Thinking...",
     aiAssistantTimeout: "AI Assistant timed out. Try again directly.",
     aiAssistantUnavailable: "Built-in AI Assistant is not supported in this Chrome version, or the model is unavailable.",

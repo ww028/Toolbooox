@@ -151,6 +151,7 @@ https://chrome.google.com/webstore/devconsole
 | `activeTab`  | 读取当前页面 URL，用于账号匹配、域名替换和当前网站展示            |
 | `cookies`    | 在用户主动配置接口地址后，读取对应 URL 的 Cookie 作为查看功能兜底 |
 | `webRequest` | 捕获用户保存的接口请求实际携带的 Cookie header                    |
+| `contextMenus` | 为选中文本提供 AI 助手摘要、翻译、解释、改写右键入口           |
 | `<all_urls>` | 支持用户对任意站点/API 地址配置域名替换和 Cookie 查看             |
 
 ### 隐私表单填写方向

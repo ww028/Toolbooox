@@ -123,6 +123,9 @@ describe("chrome language model", () => {
     expect(prompt).toContain("默认回答风格：");
     expect(prompt).toContain("像自然聊天一样回答");
     expect(prompt).toContain("段落之间保留空行");
+    expect(prompt).toContain("直接输出目标语言译文");
+    expect(prompt).toContain("未指定目标语言时，中文翻译成英文，非中文翻译成中文");
+    expect(prompt).toContain("目标语言不是中文，不要受默认中文回复规则影响");
     expect(prompt).toContain("复杂任务工作流：");
     expect(prompt).toContain("先把任务拆成 2-4 个小步骤");
     expect(prompt).toContain("拆解后直接执行这些步骤");
@@ -213,7 +216,7 @@ describe("chrome language model", () => {
 
     const pendingAnswer = askChromeLanguageModel("hello");
     const timeoutAssertion = expect(pendingAnswer).rejects.toThrow("LANGUAGE_MODEL_TIMEOUT");
-    await vi.advanceTimersByTimeAsync(8_000);
+    await vi.advanceTimersByTimeAsync(20_000);
 
     await timeoutAssertion;
     expect(destroy).not.toHaveBeenCalled();

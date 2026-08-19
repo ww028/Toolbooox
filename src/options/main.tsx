@@ -1,5 +1,5 @@
 import { StrictMode, useEffect, useMemo, useRef, useState } from "react";
-import type { ChangeEvent, FormEvent } from "react";
+import type { ChangeEvent, FormEvent, KeyboardEvent } from "react";
 import { createRoot } from "react-dom/client";
 import {
   askChromeLanguageModelStreaming,
@@ -9,6 +9,7 @@ import {
   summarizeAiAssistantConversationTurn,
   type LanguageModelInitializationUpdate
 } from "../shared/aiAssistant/chromeLanguageModel";
+import { consumeAiAssistantContextPrompt } from "../shared/aiAssistant/contextPrompt";
 import {
   getAiAssistantConversations,
   getSavedAiAssistantInitialized,
@@ -67,6 +68,7 @@ function OptionsApp() {
   const searchParams = new URLSearchParams(window.location.search);
   const optionsTool = searchParams.get("tool") === "aiAssistant" ? "aiAssistant" : "textCompare";
   const initialAiAssistantPrompt = searchParams.get("prompt") ?? "";
+  const shouldLoadAiAssistantContextPrompt = searchParams.get("contextPrompt") === "1";
   const [locale, setLocale] = useState<Locale>(getDefaultLocale());
   const [leftText, setLeftText] = useState("");
   const [rightText, setRightText] = useState("");
@@ -81,6 +83,10 @@ function OptionsApp() {
   const [activeAiAssistantConversationId, setActiveAiAssistantConversationId] =
     useState<string | null>(null);
   const [aiAssistantInput, setAiAssistantInput] = useState("");
+  const [aiAssistantModelPromptOverride, setAiAssistantModelPromptOverride] = useState<{
+    readonly input: string;
+    readonly prompt: string;
+  } | null>(null);
   const [aiAssistantInitializationStatus, setAiAssistantInitializationStatus] =
     useState<AiAssistantInitializationStatus>("checking");
   const [aiAssistantInitializationDetail, setAiAssistantInitializationDetail] = useState("");
@@ -89,17 +95,25 @@ function OptionsApp() {
   );
   const [message, setMessage] = useState("");
   const aiChatListRef = useRef<HTMLDivElement | null>(null);
+  const aiAssistantInputRef = useRef<HTMLTextAreaElement | null>(null);
+  const shouldFocusAiAssistantInputRef = useRef(false);
 
   useEffect(() => {
     void getSavedLocale().then(setLocale);
     void getSavedAiAssistantInitialized().then((isInitialized) => {
       setAiAssistantInitializationStatus(isInitialized ? "ready" : "needed");
     });
-    void getAiAssistantConversations().then((conversations) => {
+    void getAiAssistantConversations().then(async (conversations) => {
       setAiAssistantConversations(conversations);
+      const contextPrompt = shouldLoadAiAssistantContextPrompt
+        ? await consumeAiAssistantContextPrompt()
+        : null;
+      const nextInitialAiAssistantPrompt = contextPrompt?.input || initialAiAssistantPrompt;
 
-      if (initialAiAssistantPrompt) {
-        setAiAssistantInput(initialAiAssistantPrompt);
+      if (nextInitialAiAssistantPrompt) {
+        shouldFocusAiAssistantInputRef.current = true;
+        setAiAssistantModelPromptOverride(contextPrompt);
+        setAiAssistantInput(nextInitialAiAssistantPrompt);
         return;
       }
 
@@ -117,7 +131,7 @@ function OptionsApp() {
         setDiffLines(createTextDiff(savedState.leftText, savedState.rightText));
       }
     });
-  }, [initialAiAssistantPrompt]);
+  }, [initialAiAssistantPrompt, shouldLoadAiAssistantContextPrompt]);
 
   const t = messages[locale];
   const isAiAssistantReady = aiAssistantInitializationStatus === "ready";
@@ -154,6 +168,27 @@ function OptionsApp() {
 
     void prewarmChromeLanguageModel();
   }, [aiAssistantInitializationStatus, optionsTool]);
+
+  useEffect(() => {
+    if (
+      optionsTool !== "aiAssistant" ||
+      !isAiAssistantReady ||
+      !aiAssistantInput.trim() ||
+      !shouldFocusAiAssistantInputRef.current
+    ) {
+      return;
+    }
+
+    const inputElement = aiAssistantInputRef.current;
+
+    if (!inputElement) {
+      return;
+    }
+
+    inputElement.focus();
+    inputElement.setSelectionRange(inputElement.value.length, inputElement.value.length);
+    shouldFocusAiAssistantInputRef.current = false;
+  }, [aiAssistantInput, isAiAssistantReady, optionsTool]);
 
   const getAiAssistantErrorMessage = (error: unknown): string => {
     const errorMessage = error instanceof Error ? error.message : "";
@@ -240,6 +275,7 @@ function OptionsApp() {
     setActiveAiAssistantConversationId(conversation.id);
     setAiAssistantMessages([...conversation.messages]);
     setAiAssistantInput("");
+    setAiAssistantModelPromptOverride(null);
     setMessage("");
   };
 
@@ -247,6 +283,7 @@ function OptionsApp() {
     setActiveAiAssistantConversationId(null);
     setAiAssistantMessages([]);
     setAiAssistantInput("");
+    setAiAssistantModelPromptOverride(null);
     setMessage("");
   };
 
@@ -267,6 +304,10 @@ function OptionsApp() {
       setMessage(t.aiAssistantInitializeFirst);
       return;
     }
+    const modelPrompt =
+      aiAssistantModelPromptOverride?.input.trim() === prompt
+        ? aiAssistantModelPromptOverride.prompt
+        : prompt;
 
     const userMessage: AiAssistantMessage = {
       id: createClientId("ai-user"),
@@ -304,12 +345,13 @@ function OptionsApp() {
       ...currentConversations.filter((conversation) => conversation.id !== conversationId)
     ]);
     setAiAssistantInput("");
+    setAiAssistantModelPromptOverride(null);
     setPendingAction("askAiAssistant");
 
     try {
       let nextAnswer = "";
       await askChromeLanguageModelStreaming(
-        prompt,
+        modelPrompt,
         (chunk) => {
           nextAnswer += chunk;
           setAiAssistantMessages((currentMessages) =>
@@ -378,6 +420,16 @@ function OptionsApp() {
   const handleClearAiAssistant = () => {
     handleNewAiAssistantConversation();
   };
+
+  const handleAiAssistantInputKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
+    if (event.key !== "Enter" || event.shiftKey) {
+      return;
+    }
+
+    event.preventDefault();
+    event.currentTarget.form?.requestSubmit();
+  };
+
   const displayDiffBlocks = useMemo(
     () => createTextDiffDisplayBlocks(diffBlocks, expandedDiffBlockKeys),
     [diffBlocks, expandedDiffBlockKeys]
@@ -567,13 +619,19 @@ function OptionsApp() {
 
             <form className="ai-options-composer" onSubmit={handleAskAiAssistant}>
               <textarea
+                ref={aiAssistantInputRef}
                 aria-label={t.aiAssistantPrompt}
                 placeholder={t.aiAssistantPromptPlaceholder}
                 disabled={!isAiAssistantReady || pendingAction === "askAiAssistant"}
                 value={aiAssistantInput}
-                onChange={(event) => setAiAssistantInput(event.target.value)}
+                onChange={(event) => {
+                  setAiAssistantModelPromptOverride(null);
+                  setAiAssistantInput(event.target.value);
+                }}
+                onKeyDown={handleAiAssistantInputKeyDown}
               />
               <div className="ai-options-composer-footer">
+                <span>{t.aiAssistantSendShortcutHint}</span>
                 <button
                   className="primary-action"
                   disabled={

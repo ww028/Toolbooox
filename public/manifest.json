@@ -16,6 +16,14 @@
     "service_worker": "background.js",
     "type": "module"
   },
-  "permissions": ["storage", "activeTab", "cookies", "webRequest", "sidePanel"],
+  "permissions": [
+    "storage",
+    "activeTab",
+    "cookies",
+    "webRequest",
+    "sidePanel",
+    "contextMenus",
+    "scripting"
+  ],
   "host_permissions": ["<all_urls>"]
 }

@@ -2,6 +2,23 @@ import { StrictMode, useEffect, useMemo, useRef, useState } from "react";
 import type { ChangeEvent, FormEvent, KeyboardEvent } from "react";
 import { createRoot } from "react-dom/client";
 import {
+  askChromeLanguageModelStreaming,
+  initializeChromeLanguageModel,
+  isChromeLanguageModelInitialized,
+  prewarmChromeLanguageModel,
+  summarizeAiAssistantConversationTurn,
+  type LanguageModelInitializationUpdate
+} from "../shared/aiAssistant/chromeLanguageModel";
+import { consumeAiAssistantContextPrompt } from "../shared/aiAssistant/contextPrompt";
+import {
+  getAiAssistantConversations,
+  getSavedAiAssistantInitialized,
+  saveAiAssistantConversations,
+  saveAiAssistantInitialized,
+  type AiAssistantConversation,
+  type AiAssistantStoredMessage
+} from "../shared/aiAssistant/storage";
+import {
   evaluateCalculatorExpression,
   formatCalculatorChineseDescription,
   formatCalculatorResult,
@@ -14,13 +31,22 @@ import {
   getSavedCalculatorState,
   saveCalculatorState
 } from "../shared/calculator/storage";
+import {
+  createActivePageContextPrompt,
+  getActivePageContent,
+  shouldUseActivePageContent
+} from "../shared/chrome/pageContent";
 import { getDefaultLocale, getSavedLocale, type Locale } from "../shared/i18n/locale";
 import { messages } from "../shared/i18n/messages";
-import { isCloseSidePanelMessage } from "../shared/sidePanel/messages";
 import {
-  getIndexedDbValue,
-  setIndexedDbValue
-} from "../shared/storage/indexedDbKeyValue";
+  isCloseSidePanelMessage,
+  isOpenAiAssistantSidePanelMessage
+} from "../shared/sidePanel/messages";
+import {
+  getSavedSidePanelTool,
+  saveSidePanelTool,
+  type SidePanelToolKey
+} from "../shared/sidePanel/tools";
 import {
   deleteTodoItem,
   getTodoItems,
@@ -35,19 +61,27 @@ const emptyTodoDraft: TodoDraft = {
   title: "",
   content: ""
 };
-const ACTIVE_TOOL_STORAGE_KEY = "toolbooox.activeTool";
-type SidePanelToolKey = "calculator" | "todoItems";
+type AiAssistantInitializationStatus = "checking" | "needed" | "initializing" | "ready";
+const AI_ASSISTANT_TITLE_MAX_LENGTH = 24;
 
-function normalizeSidePanelToolKey(value: unknown): SidePanelToolKey {
-  return value === "calculator" ? "calculator" : "todoItems";
+function createClientId(prefix: string): string {
+  if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
+    return crypto.randomUUID();
+  }
+
+  return `${prefix}-${Date.now()}-${Math.random().toString(16).slice(2)}`;
 }
 
-async function getSavedSidePanelTool(): Promise<SidePanelToolKey> {
-  return normalizeSidePanelToolKey(await getIndexedDbValue(ACTIVE_TOOL_STORAGE_KEY));
-}
+function createConversationTitle(prompt: string): string {
+  const normalizedPrompt = prompt.replace(/\s+/g, " ").trim();
 
-async function saveSidePanelTool(toolKey: SidePanelToolKey): Promise<void> {
-  await setIndexedDbValue(ACTIVE_TOOL_STORAGE_KEY, toolKey);
+  if (!normalizedPrompt) {
+    return "新对话";
+  }
+
+  return normalizedPrompt.length > AI_ASSISTANT_TITLE_MAX_LENGTH
+    ? `${normalizedPrompt.slice(0, AI_ASSISTANT_TITLE_MAX_LENGTH)}...`
+    : normalizedPrompt;
 }
 
 function padDatePart(value: number): string {
@@ -133,12 +167,83 @@ function SidePanelApp() {
   const [calculatorResult, setCalculatorResult] = useState("");
   const [calculatorResultDescription, setCalculatorResultDescription] = useState("");
   const [calculatorHistory, setCalculatorHistory] = useState<readonly CalculatorHistoryItem[]>([]);
+  const [aiAssistantMessages, setAiAssistantMessages] = useState<AiAssistantStoredMessage[]>([]);
+  const [aiAssistantConversations, setAiAssistantConversations] = useState<
+    AiAssistantConversation[]
+  >([]);
+  const [activeAiAssistantConversationId, setActiveAiAssistantConversationId] =
+    useState<string | null>(null);
+  const [aiAssistantInput, setAiAssistantInput] = useState("");
+  const [aiAssistantModelPromptOverride, setAiAssistantModelPromptOverride] = useState<{
+    readonly input: string;
+    readonly prompt: string;
+  } | null>(null);
+  const [aiAssistantInitializationStatus, setAiAssistantInitializationStatus] =
+    useState<AiAssistantInitializationStatus>("checking");
+  const [aiAssistantInitializationDetail, setAiAssistantInitializationDetail] = useState("");
+  const [pendingAiAssistantAction, setPendingAiAssistantAction] = useState<
+    "initializeAiAssistant" | "askAiAssistant" | null
+  >(null);
   const [message, setMessage] = useState("");
   const [isSaving, setIsSaving] = useState(false);
+  const aiChatListRef = useRef<HTMLDivElement | null>(null);
+  const aiAssistantInputRef = useRef<HTMLTextAreaElement | null>(null);
+  const shouldFocusAiAssistantInputRef = useRef(false);
+  const activeAiAssistantConversationIdRef = useRef<string | null>(null);
+  const aiAssistantMessagesRef = useRef<AiAssistantStoredMessage[]>([]);
+  const aiAssistantConversationsRef = useRef<AiAssistantConversation[]>([]);
+
+  activeAiAssistantConversationIdRef.current = activeAiAssistantConversationId;
+  aiAssistantMessagesRef.current = aiAssistantMessages;
+  aiAssistantConversationsRef.current = aiAssistantConversations;
+
+  const loadAiAssistantContextPrompt = async (): Promise<boolean> => {
+    const contextPrompt = await consumeAiAssistantContextPrompt();
+
+    if (!contextPrompt) {
+      return false;
+    }
+
+    shouldFocusAiAssistantInputRef.current = true;
+    setActiveTool("aiAssistant");
+    if (
+      !activeAiAssistantConversationIdRef.current &&
+      aiAssistantMessagesRef.current.length === 0
+    ) {
+      const [latestConversation] = aiAssistantConversationsRef.current;
+
+      if (latestConversation) {
+        setActiveAiAssistantConversationId(latestConversation.id);
+        setAiAssistantMessages([...latestConversation.messages]);
+      }
+    }
+    setAiAssistantModelPromptOverride(contextPrompt);
+    setAiAssistantInput(contextPrompt.input);
+    void saveSidePanelTool("aiAssistant").catch(() => undefined);
+    return true;
+  };
 
   useEffect(() => {
     void getSavedLocale().then(setLocale);
     void getSavedSidePanelTool().then(setActiveTool);
+    void getSavedAiAssistantInitialized().then((isInitialized) => {
+      setAiAssistantInitializationStatus(isInitialized ? "ready" : "needed");
+    });
+    void getAiAssistantConversations().then(async (conversations) => {
+      aiAssistantConversationsRef.current = conversations;
+      setAiAssistantConversations(conversations);
+      const didLoadContextPrompt = await loadAiAssistantContextPrompt();
+
+      if (didLoadContextPrompt) {
+        return;
+      }
+
+      const [latestConversation] = conversations;
+      if (latestConversation) {
+        setActiveAiAssistantConversationId(latestConversation.id);
+        setAiAssistantMessages([...latestConversation.messages]);
+      }
+    });
     void getSavedCalculatorState().then((savedState) => {
       setCalculatorExpression(savedState.expression);
       setCalculatorResult(savedState.result);
@@ -156,6 +261,11 @@ function SidePanelApp() {
     const handleRuntimeMessage = (message: unknown) => {
       if (isCloseSidePanelMessage(message)) {
         window.close();
+        return;
+      }
+
+      if (isOpenAiAssistantSidePanelMessage(message)) {
+        void loadAiAssistantContextPrompt();
       }
     };
 
@@ -184,6 +294,311 @@ function SidePanelApp() {
     [todoItems]
   );
   const pendingTodoCount = todoItems.length - completedTodoCount;
+  const isAiAssistantReady = aiAssistantInitializationStatus === "ready";
+
+  const scrollAiChatToBottom = () => {
+    if (activeTool !== "aiAssistant") {
+      return;
+    }
+
+    const scrollToBottom = () => {
+      const chatList = aiChatListRef.current;
+
+      if (chatList) {
+        chatList.scrollTop = chatList.scrollHeight;
+      }
+
+      const pageScroller = document.scrollingElement;
+
+      if (pageScroller) {
+        pageScroller.scrollTop = pageScroller.scrollHeight;
+      }
+    };
+
+    window.requestAnimationFrame(() => {
+      scrollToBottom();
+      window.requestAnimationFrame(scrollToBottom);
+    });
+  };
+
+  useEffect(() => {
+    scrollAiChatToBottom();
+  }, [activeTool, aiAssistantMessages]);
+
+  useEffect(() => {
+    if (
+      activeTool !== "aiAssistant" ||
+      aiAssistantInitializationStatus !== "ready" ||
+      isChromeLanguageModelInitialized()
+    ) {
+      return;
+    }
+
+    void prewarmChromeLanguageModel();
+  }, [activeTool, aiAssistantInitializationStatus]);
+
+  useEffect(() => {
+    if (
+      activeTool !== "aiAssistant" ||
+      !isAiAssistantReady ||
+      !aiAssistantInput.trim() ||
+      !shouldFocusAiAssistantInputRef.current
+    ) {
+      return;
+    }
+
+    const inputElement = aiAssistantInputRef.current;
+
+    if (!inputElement) {
+      return;
+    }
+
+    inputElement.focus();
+    inputElement.setSelectionRange(inputElement.value.length, inputElement.value.length);
+    shouldFocusAiAssistantInputRef.current = false;
+  }, [activeTool, aiAssistantInput, isAiAssistantReady]);
+
+  const getAiAssistantErrorMessage = (error: unknown): string => {
+    const errorMessage = error instanceof Error ? error.message : "";
+
+    if (errorMessage === "LANGUAGE_MODEL_TIMEOUT") {
+      return t.aiAssistantTimeout;
+    }
+
+    if (
+      errorMessage === "LANGUAGE_MODEL_UNSUPPORTED" ||
+      errorMessage === "LANGUAGE_MODEL_UNAVAILABLE"
+    ) {
+      return t.aiAssistantUnavailable;
+    }
+
+    return t.aiAssistantFailed;
+  };
+
+  const getAiAssistantInitializationDetail = (
+    update: LanguageModelInitializationUpdate
+  ): string => {
+    if (update.phase === "checking") {
+      return t.aiAssistantInitializationChecking;
+    }
+
+    if (update.phase === "creating") {
+      return t.aiAssistantInitializationCreating;
+    }
+
+    if (update.phase === "warming") {
+      return t.aiAssistantInitializationWarming;
+    }
+
+    if (update.phase === "downloading") {
+      return typeof update.downloadProgress === "number"
+        ? `${t.aiAssistantInitializationDownloading} ${Math.round(
+            update.downloadProgress * 100
+          )}%`
+        : t.aiAssistantInitializationDownloading;
+    }
+
+    return t.aiAssistantInitialized;
+  };
+
+  const handleInitializeAiAssistant = async () => {
+    if (pendingAiAssistantAction === "initializeAiAssistant") {
+      return;
+    }
+
+    setAiAssistantInitializationStatus("initializing");
+    setAiAssistantInitializationDetail(t.aiAssistantInitializationChecking);
+    setPendingAiAssistantAction("initializeAiAssistant");
+
+    try {
+      await initializeChromeLanguageModel((update) => {
+        setAiAssistantInitializationDetail(getAiAssistantInitializationDetail(update));
+      });
+      await saveAiAssistantInitialized(true);
+      setAiAssistantInitializationStatus("ready");
+      setAiAssistantInitializationDetail("");
+      setMessage(t.aiAssistantInitialized);
+    } catch (error) {
+      setAiAssistantInitializationStatus("needed");
+      setAiAssistantInitializationDetail("");
+      setMessage(getAiAssistantErrorMessage(error));
+    } finally {
+      setPendingAiAssistantAction(null);
+    }
+  };
+
+  const persistAiAssistantConversation = async (
+    conversation: AiAssistantConversation
+  ): Promise<void> => {
+    const nextConversations = await saveAiAssistantConversations([
+      conversation,
+      ...aiAssistantConversations.filter(
+        (savedConversation) => savedConversation.id !== conversation.id
+      )
+    ]);
+    setAiAssistantConversations(nextConversations);
+  };
+
+  const handleNewAiAssistantConversation = () => {
+    setActiveAiAssistantConversationId(null);
+    setAiAssistantMessages([]);
+    setAiAssistantInput("");
+    setAiAssistantModelPromptOverride(null);
+    setMessage("");
+  };
+
+  const handleAskAiAssistant = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+
+    if (pendingAiAssistantAction === "askAiAssistant") {
+      return;
+    }
+
+    const prompt = aiAssistantInput.trim();
+
+    if (!prompt) {
+      return;
+    }
+
+    if (!isAiAssistantReady) {
+      setMessage(t.aiAssistantInitializeFirst);
+      return;
+    }
+
+    let modelPrompt =
+      aiAssistantModelPromptOverride?.input.trim() === prompt
+        ? aiAssistantModelPromptOverride.prompt
+        : prompt;
+
+    if (!aiAssistantModelPromptOverride && shouldUseActivePageContent(prompt)) {
+      const activePageContent = await getActivePageContent().catch(() => null);
+
+      if (activePageContent) {
+        modelPrompt = createActivePageContextPrompt(prompt, activePageContent);
+      } else {
+        setMessage(t.aiAssistantPageContextUnavailable);
+        return;
+      }
+    }
+
+    const userMessage: AiAssistantStoredMessage = {
+      id: createClientId("ai-user"),
+      role: "user",
+      content: prompt
+    };
+    const assistantMessageId = createClientId("ai-assistant");
+    const pendingAssistantMessage: AiAssistantStoredMessage = {
+      id: assistantMessageId,
+      role: "assistant",
+      content: t.aiAssistantGenerating
+    };
+    const currentConversation = aiAssistantConversations.find(
+      (conversation) => conversation.id === activeAiAssistantConversationId
+    );
+    const conversationId = currentConversation?.id ?? createClientId("ai-conversation");
+    const createdAt = currentConversation?.createdAt ?? new Date().toISOString();
+    const title = currentConversation?.title ?? createConversationTitle(prompt);
+
+    setAiAssistantMessages((currentMessages) => [
+      ...currentMessages,
+      userMessage,
+      pendingAssistantMessage
+    ]);
+    setActiveAiAssistantConversationId(conversationId);
+    setAiAssistantConversations((currentConversations) => [
+      {
+        id: conversationId,
+        title,
+        summary: currentConversation?.summary,
+        messages: [...aiAssistantMessages, userMessage, pendingAssistantMessage],
+        createdAt,
+        updatedAt: new Date().toISOString()
+      },
+      ...currentConversations.filter((conversation) => conversation.id !== conversationId)
+    ]);
+    setAiAssistantInput("");
+    setAiAssistantModelPromptOverride(null);
+    setPendingAiAssistantAction("askAiAssistant");
+    scrollAiChatToBottom();
+
+    try {
+      let nextAnswer = "";
+      await askChromeLanguageModelStreaming(
+        modelPrompt,
+        (chunk) => {
+          nextAnswer += chunk;
+          setAiAssistantMessages((currentMessages) =>
+            currentMessages.map((chatMessage) =>
+              chatMessage.id === assistantMessageId
+                ? { ...chatMessage, content: nextAnswer }
+                : chatMessage
+            )
+          );
+          scrollAiChatToBottom();
+        },
+        {
+          conversationSummary: currentConversation?.summary,
+          messages: aiAssistantMessages
+        }
+      );
+      const nextSummary = await summarizeAiAssistantConversationTurn({
+        previousSummary: currentConversation?.summary,
+        userPrompt: prompt,
+        assistantAnswer: nextAnswer
+      }).catch(() => currentConversation?.summary ?? "");
+      await persistAiAssistantConversation({
+        id: conversationId,
+        title,
+        summary: nextSummary || undefined,
+        messages: [
+          ...aiAssistantMessages,
+          userMessage,
+          {
+            id: assistantMessageId,
+            role: "assistant",
+            content: nextAnswer
+          }
+        ],
+        createdAt,
+        updatedAt: new Date().toISOString()
+      });
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : "";
+
+      setAiAssistantMessages((currentMessages) =>
+        currentMessages.filter((chatMessage) => chatMessage.id !== assistantMessageId)
+      );
+      await persistAiAssistantConversation({
+        id: conversationId,
+        title,
+        summary: currentConversation?.summary,
+        messages: [...aiAssistantMessages, userMessage],
+        createdAt,
+        updatedAt: new Date().toISOString()
+      });
+
+      if (
+        errorMessage === "LANGUAGE_MODEL_UNAVAILABLE" ||
+        errorMessage === "LANGUAGE_MODEL_UNSUPPORTED"
+      ) {
+        setAiAssistantInitializationStatus("needed");
+        void saveAiAssistantInitialized(false);
+      }
+
+      setMessage(getAiAssistantErrorMessage(error));
+    } finally {
+      setPendingAiAssistantAction(null);
+    }
+  };
+
+  const handleAiAssistantInputKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
+    if (event.key !== "Enter" || event.shiftKey) {
+      return;
+    }
+
+    event.preventDefault();
+    event.currentTarget.form?.requestSubmit();
+  };
 
   const resetTodoForm = () => {
     setEditingTodoId(null);
@@ -369,9 +784,107 @@ function SidePanelApp() {
   };
 
   return (
-    <main className="sidepanel-shell">
+    <main className={`sidepanel-shell${activeTool === "aiAssistant" ? " sidepanel-shell-ai" : ""}`}>
       {message ? <p className="toast" role="status">{message}</p> : null}
-      {activeTool === "calculator" ? (
+      {activeTool === "aiAssistant" ? (
+        <>
+          <header className="feature-header ai-sidepanel-header">
+            <div>
+              <h1>{t.aiAssistant}</h1>
+            </div>
+            <div className="feature-actions">
+              <button
+                className="text-button"
+                disabled={aiAssistantMessages.length === 0 && !aiAssistantInput}
+                type="button"
+                onClick={handleNewAiAssistantConversation}
+              >
+                {t.aiAssistantNewConversation}
+              </button>
+              <button className="text-button" type="button" onClick={handleCloseSidePanel}>
+                {t.closeSidePanel}
+              </button>
+            </div>
+          </header>
+
+          <section className="ai-sidepanel-chat" aria-label={t.aiAssistant}>
+            {!isAiAssistantReady ? (
+              <div className="ai-sidepanel-initialization">
+                <div>
+                  <strong>{t.aiAssistantInitializeFirst}</strong>
+                  {aiAssistantInitializationDetail ? (
+                    <span>{aiAssistantInitializationDetail}</span>
+                  ) : null}
+                </div>
+                <button
+                  className="primary-action"
+                  disabled={
+                    aiAssistantInitializationStatus === "checking" ||
+                    pendingAiAssistantAction === "initializeAiAssistant"
+                  }
+                  type="button"
+                  onClick={handleInitializeAiAssistant}
+                >
+                  {aiAssistantInitializationStatus === "initializing" ||
+                  pendingAiAssistantAction === "initializeAiAssistant"
+                    ? t.aiAssistantInitializing
+                    : t.aiAssistantInitialize}
+                </button>
+              </div>
+            ) : null}
+
+            <div className="ai-sidepanel-chat-list" ref={aiChatListRef} role="log">
+              {aiAssistantMessages.length > 0 ? (
+                aiAssistantMessages.map((chatMessage) => (
+                  <article
+                    className={`ai-sidepanel-message ai-sidepanel-message-${chatMessage.role}`}
+                    key={chatMessage.id}
+                  >
+                    <div className="ai-sidepanel-role">
+                      {chatMessage.role === "user" ? t.aiAssistantUser : t.aiAssistant}
+                    </div>
+                    <div className="ai-sidepanel-content">{chatMessage.content}</div>
+                  </article>
+                ))
+              ) : (
+                <div className="empty-state">
+                  <p>{t.aiAssistantEmpty}</p>
+                </div>
+              )}
+            </div>
+          </section>
+
+          <form className="ai-sidepanel-composer" onSubmit={handleAskAiAssistant}>
+            <textarea
+              ref={aiAssistantInputRef}
+              aria-label={t.aiAssistantPrompt}
+              disabled={!isAiAssistantReady || pendingAiAssistantAction === "askAiAssistant"}
+              placeholder={t.aiAssistantPromptPlaceholder}
+              value={aiAssistantInput}
+              onChange={(event) => {
+                setAiAssistantModelPromptOverride(null);
+                setAiAssistantInput(event.target.value);
+              }}
+              onKeyDown={handleAiAssistantInputKeyDown}
+            />
+            <div className="ai-sidepanel-composer-footer">
+              <span>{t.aiAssistantSendShortcutHint}</span>
+              <button
+                className="primary-action"
+                disabled={
+                  !isAiAssistantReady ||
+                  pendingAiAssistantAction === "initializeAiAssistant" ||
+                  pendingAiAssistantAction === "askAiAssistant" ||
+                  !aiAssistantInput.trim()
+                }
+                type="submit"
+              >
+                {pendingAiAssistantAction === "askAiAssistant" ? t.aiAssistantThinking : t.send}
+              </button>
+            </div>
+          </form>
+        </>
+      ) : activeTool === "calculator" ? (
         <>
           <header className="feature-header">
             <div>

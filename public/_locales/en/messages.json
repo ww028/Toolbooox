@@ -4,5 +4,20 @@
   },
   "extDescription": {
     "message": "A local-first all-purpose toolbox Chrome extension."
+  },
+  "aiContextMenuRoot": {
+    "message": "Process selection with AI Assistant"
+  },
+  "aiContextMenuSummarize": {
+    "message": "Summarize"
+  },
+  "aiContextMenuTranslate": {
+    "message": "Translate"
+  },
+  "aiContextMenuExplain": {
+    "message": "Explain"
+  },
+  "aiContextMenuRewrite": {
+    "message": "Rewrite"
   }
 }

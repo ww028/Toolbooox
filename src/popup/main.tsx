@@ -91,6 +91,10 @@ import {
 } from "../shared/translation/chromeTranslator";
 import { CLOSE_SIDE_PANEL_MESSAGE_TYPE } from "../shared/sidePanel/messages";
 import {
+  saveSidePanelTool,
+  type SidePanelToolKey
+} from "../shared/sidePanel/tools";
+import {
   deleteTodoItem,
   getTodoItems,
   saveTodoItem,
@@ -126,7 +130,6 @@ type MenuSettings = {
   readonly order: PrimaryToolKey[];
   readonly hidden: PrimaryToolKey[];
 };
-type SidePanelToolKey = "calculator" | "todoItems";
 type SavedEntriesTab = "otherSites" | "all";
 type PendingAction =
   | "save"
@@ -167,7 +170,6 @@ const emptyAddressNavigationDraft: AddressNavigationDraft = {
 };
 
 const PASSWORD_PAGE_SIZE = 10;
-const ACTIVE_TOOL_STORAGE_KEY = "toolbooox.activeTool";
 const MENU_SETTINGS_STORAGE_KEY = "toolbooox.menuSettings";
 const TRANSLATION_LANGUAGE_SETTINGS_STORAGE_KEY = "toolbooox.translationLanguages";
 const LONG_TEXT_COMPARE_LINE_THRESHOLD = 10;
@@ -203,6 +205,25 @@ function normalizeSavedToolKey(value: unknown): ToolKey {
   return isToolKey(value) ? value : "passwordManager";
 }
 
+function isAiAssistantFullscreenUrl(value: string): boolean {
+  const optionsUrlPrefix =
+    typeof chrome !== "undefined" && chrome.runtime?.getURL
+      ? chrome.runtime.getURL("options.html")
+      : `${window.location.origin}/options.html`;
+
+  try {
+    const url = new URL(value);
+
+    return (
+      url.href.startsWith(optionsUrlPrefix) &&
+      url.pathname.endsWith("/options.html") &&
+      url.searchParams.get("tool") === "aiAssistant"
+    );
+  } catch {
+    return false;
+  }
+}
+
 function isTranslationLanguageCode(value: unknown): value is TranslationLanguageCode {
   return TRANSLATION_LANGUAGE_OPTIONS.some((languageOption) => languageOption.code === value);
 }
@@ -234,11 +255,11 @@ function normalizeTranslationLanguages(value: unknown): {
 }
 
 async function getSavedActiveTool(): Promise<ToolKey> {
-  return normalizeSavedToolKey(await getIndexedDbValue(ACTIVE_TOOL_STORAGE_KEY));
+  return normalizeSavedToolKey(await getIndexedDbValue("toolbooox.activeTool"));
 }
 
 async function saveActiveTool(toolKey: ToolKey): Promise<void> {
-  await setIndexedDbValue(ACTIVE_TOOL_STORAGE_KEY, toolKey);
+  await setIndexedDbValue("toolbooox.activeTool", toolKey);
 }
 
 async function getSavedTranslationLanguages(): Promise<{
@@ -1358,6 +1379,11 @@ function PopupApp() {
   };
 
   const handleOpenAiAssistantFullscreen = (prompt = "") => {
+    if (!prompt && activeTab?.url && isAiAssistantFullscreenUrl(activeTab.url)) {
+      setMessage(t.aiAssistantAlreadyInFullscreen);
+      return;
+    }
+
     const query = new URLSearchParams({ tool: "aiAssistant" });
 
     if (prompt) {
@@ -1377,8 +1403,17 @@ function PopupApp() {
     shouldClosePopup = false,
     sidePanelToolKey: SidePanelToolKey = "todoItems"
   ) => {
+    if (
+      sidePanelToolKey === "aiAssistant" &&
+      activeTab?.url &&
+      isAiAssistantFullscreenUrl(activeTab.url)
+    ) {
+      setMessage(t.aiAssistantSidePanelUnavailableInFullscreen);
+      return;
+    }
+
     if (shouldClosePopup) {
-      await saveActiveTool(sidePanelToolKey);
+      await saveSidePanelTool(sidePanelToolKey);
     }
 
     if (typeof chrome === "undefined" || !chrome.sidePanel?.open) {
@@ -2773,16 +2808,35 @@ function PopupApp() {
                   <p>{t.aiAssistantPopupGuideLimits}</p>
                   <strong>{t.aiAssistantPopupGuideSummary}</strong>
                 </div>
-                <button
-                  className="primary-button"
-                  aria-busy={isAiAssistantInitializing ? "true" : undefined}
-                  disabled={isAiAssistantInitializing}
-                  type="button"
-                  onClick={handleAiAssistantEntryClick}
-                >
-                  {isAiAssistantInitializing ? <span className="button-spinner" /> : null}
-                  {isAiAssistantReady ? t.aiAssistantOpenChat : t.aiAssistantPopupInitialize}
-                </button>
+                {isAiAssistantReady ? (
+                  <div className="ai-assistant-entry-actions">
+                    <button
+                      className="primary-button"
+                      type="button"
+                      onClick={() => handleOpenAiAssistantFullscreen()}
+                    >
+                      {t.aiAssistantOpenChat}
+                    </button>
+                    <button
+                      className="text-button"
+                      type="button"
+                      onClick={() => handleOpenSidePanelDemo(true, "aiAssistant")}
+                    >
+                      {t.aiAssistantSidePanelChat}
+                    </button>
+                  </div>
+                ) : (
+                  <button
+                    className="primary-button"
+                    aria-busy={isAiAssistantInitializing ? "true" : undefined}
+                    disabled={isAiAssistantInitializing}
+                    type="button"
+                    onClick={handleAiAssistantEntryClick}
+                  >
+                    {isAiAssistantInitializing ? <span className="button-spinner" /> : null}
+                    {t.aiAssistantPopupInitialize}
+                  </button>
+                )}
                 {aiAssistantInitializationDetail ? (
                   <p className="ai-assistant-initialization-detail">
                     {aiAssistantInitializationDetail}

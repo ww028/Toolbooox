@@ -4,5 +4,20 @@
   },
   "extDescription": {
     "message": "一个本地优先的万能工具库 Chrome 浏览器插件。"
+  },
+  "aiContextMenuRoot": {
+    "message": "用 AI 助手处理选中文本"
+  },
+  "aiContextMenuSummarize": {
+    "message": "摘要"
+  },
+  "aiContextMenuTranslate": {
+    "message": "翻译"
+  },
+  "aiContextMenuExplain": {
+    "message": "解释"
+  },
+  "aiContextMenuRewrite": {
+    "message": "改写"
   }
 }

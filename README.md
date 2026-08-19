@@ -248,14 +248,15 @@ Toolbooox 的设计原则是本地优先。
 
 `public/manifest.json` 当前声明：
 
-| 权限         | 用途                                                                  |
-| ------------ | --------------------------------------------------------------------- |
-| `storage`    | 保存密码密钥、菜单设置、域名规则、Cookie 配置、计算器状态、待办事项等 |
-| `activeTab`  | 获取当前标签页 URL，用于账号匹配、域名替换、当前网站展示              |
-| `cookies`    | 查看 Cookie 功能中按 URL 读取 Cookie 作为兜底                         |
-| `webRequest` | 捕获指定接口请求真实携带的 Cookie header                              |
-| `sidePanel`  | 打开 Chrome Side Panel                                                |
-| `<all_urls>` | 支持用户配置任意网站/API 地址进行匹配和监听                           |
+| 权限           | 用途                                                                  |
+| -------------- | --------------------------------------------------------------------- |
+| `storage`      | 保存密码密钥、菜单设置、域名规则、Cookie 配置、计算器状态、待办事项等 |
+| `activeTab`    | 获取当前标签页 URL，用于账号匹配、域名替换、当前网站展示              |
+| `cookies`      | 查看 Cookie 功能中按 URL 读取 Cookie 作为兜底                         |
+| `webRequest`   | 捕获指定接口请求真实携带的 Cookie header                              |
+| `sidePanel`    | 打开 Chrome Side Panel                                                |
+| `contextMenus` | 为选中文本提供 AI 助手摘要、翻译、解释、改写右键入口                  |
+| `<all_urls>`   | 支持用户配置任意网站/API 地址进行匹配和监听                           |
 
 ### 技术方案
 
@@ -476,14 +477,15 @@ Toolbooox does not provide cloud sync and does not upload passwords, cookies, te
 
 ### Permissions
 
-| Permission   | Purpose                                             |
-| ------------ | --------------------------------------------------- |
-| `storage`    | Persist local settings and feature data             |
-| `activeTab`  | Read the current tab URL for matching and switching |
-| `cookies`    | Fallback Cookie reading by URL                      |
-| `webRequest` | Capture outgoing request Cookie headers             |
-| `sidePanel`  | Open Chrome Side Panel                              |
-| `<all_urls>` | Support user-configured sites and API URLs          |
+| Permission     | Purpose                                             |
+| -------------- | --------------------------------------------------- |
+| `storage`      | Persist local settings and feature data             |
+| `activeTab`    | Read the current tab URL for matching and switching |
+| `cookies`      | Fallback Cookie reading by URL                      |
+| `webRequest`   | Capture outgoing request Cookie headers             |
+| `sidePanel`    | Open Chrome Side Panel                              |
+| `contextMenus` | Provide AI Assistant actions for selected text      |
+| `<all_urls>`   | Support user-configured sites and API URLs          |
 
 ### Tech Stack
 
