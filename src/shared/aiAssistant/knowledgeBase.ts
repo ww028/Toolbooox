@@ -116,19 +116,100 @@ function normalizeKnowledgeItem(value: unknown): AiAssistantKnowledgeItem | null
 }
 
 function normalizeKnowledgeItems(value: unknown): AiAssistantKnowledgeItem[] {
+  return mergeKnowledgeItemsByTitle(
+    normalizeRawKnowledgeItems(value)
+  )
+    .sort((left, right) => right.updatedAt.localeCompare(left.updatedAt))
+    .slice(0, MAX_KNOWLEDGE_ITEMS);
+}
+
+function normalizeRawKnowledgeItems(value: unknown): AiAssistantKnowledgeItem[] {
   if (!Array.isArray(value)) {
     return [];
   }
 
   return value
     .map(normalizeKnowledgeItem)
-    .filter((item): item is AiAssistantKnowledgeItem => item !== null)
-    .sort((left, right) => right.updatedAt.localeCompare(left.updatedAt))
-    .slice(0, MAX_KNOWLEDGE_ITEMS);
+    .filter((item): item is AiAssistantKnowledgeItem => item !== null);
 }
 
 function normalizeDraftText(value: string): string {
   return value.replace(/\s+/g, " ").trim();
+}
+
+function normalizeKnowledgeTitleKey(value: string): string {
+  return normalizeDraftText(value).toLowerCase();
+}
+
+function mergeKnowledgeTags(left: string, right: string): string {
+  return Array.from(
+    new Set(
+      `${left},${right}`
+        .split(/[,，]/u)
+        .map((tag) => tag.trim())
+        .filter(Boolean)
+    )
+  ).join(", ");
+}
+
+function mergeKnowledgeContent(left: string, right: string): string {
+  const normalizedLeft = left.trim();
+  const normalizedRight = right.trim();
+
+  if (!normalizedLeft) {
+    return normalizedRight;
+  }
+
+  if (!normalizedRight || normalizedLeft.includes(normalizedRight)) {
+    return normalizedLeft;
+  }
+
+  if (normalizedRight.includes(normalizedLeft)) {
+    return normalizedRight;
+  }
+
+  return `${normalizedLeft}\n\n${normalizedRight}`;
+}
+
+function mergeKnowledgeItemValues(
+  baseItem: AiAssistantKnowledgeItem,
+  nextItem: AiAssistantKnowledgeItem
+): AiAssistantKnowledgeItem {
+  const baseIsNewer = baseItem.updatedAt >= nextItem.updatedAt;
+  const newerItem = baseIsNewer ? baseItem : nextItem;
+
+  return {
+    id: newerItem.id,
+    title: newerItem.title,
+    content: mergeKnowledgeContent(baseItem.content, nextItem.content),
+    tags: mergeKnowledgeTags(baseItem.tags, nextItem.tags),
+    createdAt:
+      baseItem.createdAt <= nextItem.createdAt ? baseItem.createdAt : nextItem.createdAt,
+    updatedAt:
+      baseItem.updatedAt >= nextItem.updatedAt ? baseItem.updatedAt : nextItem.updatedAt
+  };
+}
+
+function mergeKnowledgeItemsByTitle(
+  items: readonly AiAssistantKnowledgeItem[]
+): AiAssistantKnowledgeItem[] {
+  const mergedItems = new Map<string, AiAssistantKnowledgeItem>();
+
+  items.forEach((item) => {
+    const titleKey = normalizeKnowledgeTitleKey(item.title);
+
+    if (!titleKey) {
+      return;
+    }
+
+    const existingItem = mergedItems.get(titleKey);
+    mergedItems.set(
+      titleKey,
+      existingItem ? mergeKnowledgeItemValues(existingItem, item) : item
+    );
+  });
+
+  return Array.from(mergedItems.values());
 }
 
 function createKnowledgeTitle(content: string, fallbackTitle: string): string {
@@ -402,7 +483,7 @@ export async function saveAiAssistantKnowledgeItem(
   }
 
   const now = new Date().toISOString();
-  const item: AiAssistantKnowledgeItem = {
+  const draftItem: AiAssistantKnowledgeItem = {
     id: existingItem?.id ?? createKnowledgeItemId(),
     title: draft.title.trim(),
     content: draft.content.trim(),
@@ -415,9 +496,30 @@ export async function saveAiAssistantKnowledgeItem(
 
   try {
     const transaction = database.transaction(KNOWLEDGE_STORE_NAME, "readwrite");
-    transaction.objectStore(KNOWLEDGE_STORE_NAME).put(item);
+    const store = transaction.objectStore(KNOWLEDGE_STORE_NAME);
+    const titleKey = normalizeKnowledgeTitleKey(draftItem.title);
+    const existingItems = normalizeRawKnowledgeItems(
+      await requestToPromise<AiAssistantKnowledgeItem[]>(store.getAll())
+    );
+    const sameTitleItems = existingItems.filter(
+      (item) =>
+        normalizeKnowledgeTitleKey(item.title) === titleKey ||
+        item.id === existingItem?.id
+    );
+    const mergedItem = sameTitleItems.reduce(
+      (currentItem, sameTitleItem) => mergeKnowledgeItemValues(sameTitleItem, currentItem),
+      draftItem
+    );
+
+    sameTitleItems
+      .filter((item) => item.id !== mergedItem.id)
+      .forEach((item) => {
+        store.delete(item.id);
+      });
+
+    store.put(mergedItem);
     await transactionToPromise(transaction);
-    return item;
+    return mergedItem;
   } finally {
     database.close();
   }
@@ -432,7 +534,23 @@ export async function deleteAiAssistantKnowledgeItem(itemId: string): Promise<vo
 
   try {
     const transaction = database.transaction(KNOWLEDGE_STORE_NAME, "readwrite");
-    transaction.objectStore(KNOWLEDGE_STORE_NAME).delete(itemId);
+    const store = transaction.objectStore(KNOWLEDGE_STORE_NAME);
+    const items = normalizeRawKnowledgeItems(
+      await requestToPromise<AiAssistantKnowledgeItem[]>(store.getAll())
+    );
+    const item = items.find((knowledgeItem) => knowledgeItem.id === itemId);
+
+    if (!item) {
+      store.delete(itemId);
+    } else {
+      const titleKey = normalizeKnowledgeTitleKey(item.title);
+      items
+        .filter((knowledgeItem) => normalizeKnowledgeTitleKey(knowledgeItem.title) === titleKey)
+        .forEach((knowledgeItem) => {
+          store.delete(knowledgeItem.id);
+        });
+    }
+
     await transactionToPromise(transaction);
   } finally {
     database.close();

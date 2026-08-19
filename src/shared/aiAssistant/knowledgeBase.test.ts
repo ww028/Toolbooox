@@ -46,6 +46,46 @@ describe("ai assistant knowledge base", () => {
     await expect(getAiAssistantKnowledgeItems()).resolves.toEqual([]);
   });
 
+  it("merges knowledge items with the same title", async () => {
+    const firstItem = await saveAiAssistantKnowledgeItem({
+      title: "个人信息",
+      content: "我的体重是160斤。",
+      tags: "个人信息"
+    });
+    const secondItem = await saveAiAssistantKnowledgeItem({
+      title: "个人信息",
+      content: "我的身高是172cm。",
+      tags: "身体信息"
+    });
+
+    const [item] = await getAiAssistantKnowledgeItems();
+
+    expect(secondItem.id).toBe(firstItem.id);
+    expect(await getAiAssistantKnowledgeItems()).toHaveLength(1);
+    expect(item?.title).toBe("个人信息");
+    expect(item?.content).toContain("我的体重是160斤。");
+    expect(item?.content).toContain("我的身高是172cm。");
+    expect(item?.tags).toBe("个人信息, 身体信息");
+  });
+
+  it("does not append duplicate content when saving the same knowledge again", async () => {
+    await saveAiAssistantKnowledgeItem({
+      title: "宠物",
+      content: "我的宠物薯条是银渐层。",
+      tags: "宠物"
+    });
+    await saveAiAssistantKnowledgeItem({
+      title: "宠物",
+      content: "我的宠物薯条是银渐层。",
+      tags: "宠物"
+    });
+
+    const [item] = await getAiAssistantKnowledgeItems();
+
+    expect(await getAiAssistantKnowledgeItems()).toHaveLength(1);
+    expect(item?.content).toBe("我的宠物薯条是银渐层。");
+  });
+
   it("parses conversation requests that save personal info to the knowledge base", () => {
     expect(
       parseAiAssistantKnowledgeSaveRequest(
