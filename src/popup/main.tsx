@@ -23,6 +23,14 @@ import {
   type AddressNavigationItem
 } from "../shared/addressNavigation/storage";
 import {
+  initializeChromeLanguageModel,
+  type LanguageModelInitializationUpdate
+} from "../shared/aiAssistant/chromeLanguageModel";
+import {
+  getSavedAiAssistantInitialized,
+  saveAiAssistantInitialized
+} from "../shared/aiAssistant/storage";
+import {
   evaluateCalculatorExpression,
   formatCalculatorChineseDescription,
   formatCalculatorResult,
@@ -129,8 +137,11 @@ type PendingAction =
   | "saveCookieRequestUrl"
   | "saveAddressNavigation"
   | "translateText"
+  | "initializeAiAssistant"
   | "saveTodo"
   | null;
+
+type AiAssistantInitializationStatus = "checking" | "needed" | "initializing" | "ready";
 
 const emptyForm: FormState = {
   displayName: "",
@@ -451,6 +462,9 @@ function PopupApp() {
     useState<TranslationLanguageCode>("zh-Hans");
   const [translationSourceText, setTranslationSourceText] = useState("");
   const [translationResult, setTranslationResult] = useState("");
+  const [aiAssistantInitializationStatus, setAiAssistantInitializationStatus] =
+    useState<AiAssistantInitializationStatus>("checking");
+  const [aiAssistantInitializationDetail, setAiAssistantInitializationDetail] = useState("");
   const [calculatorExpression, setCalculatorExpression] = useState("");
   const [calculatorResult, setCalculatorResult] = useState("");
   const [calculatorResultDescription, setCalculatorResultDescription] = useState("");
@@ -471,6 +485,11 @@ function PopupApp() {
   const featureMainRef = useRef<HTMLElement | null>(null);
   const t = messages[locale];
   const isActionPending = pendingAction !== null || pendingDeleteId !== null;
+  const isAiAssistantInitializing =
+    aiAssistantInitializationStatus === "checking" ||
+    aiAssistantInitializationStatus === "initializing" ||
+    pendingAction === "initializeAiAssistant";
+  const isAiAssistantReady = aiAssistantInitializationStatus === "ready";
 
   useEffect(() => {
     requestSidePanelClose();
@@ -479,6 +498,9 @@ function PopupApp() {
     void getSavedTranslationLanguages().then((savedLanguages) => {
       setTranslationSourceLanguage(savedLanguages.sourceLanguage);
       setTranslationTargetLanguage(savedLanguages.targetLanguage);
+    });
+    void getSavedAiAssistantInitialized().then((isInitialized) => {
+      setAiAssistantInitializationStatus(isInitialized ? "ready" : "needed");
     });
     void getSavedMenuSettings().then(setMenuSettings);
     void getSavedTextCompareState().then((savedState) => {
@@ -825,6 +847,80 @@ function PopupApp() {
           ? t.translationUnavailable
           : t.translationFailed
       );
+    } finally {
+      setPendingAction(null);
+    }
+  };
+
+  const getAiAssistantErrorMessage = (error: unknown): string => {
+    const message = error instanceof Error ? error.message : "";
+
+    if (message === "LANGUAGE_MODEL_TIMEOUT") {
+      return t.aiAssistantTimeout;
+    }
+
+    if (message === "LANGUAGE_MODEL_UNSUPPORTED" || message === "LANGUAGE_MODEL_UNAVAILABLE") {
+      return t.aiAssistantUnavailable;
+    }
+
+    return t.aiAssistantFailed;
+  };
+
+  const getAiAssistantInitializationDetail = (
+    update: LanguageModelInitializationUpdate
+  ): string => {
+    if (update.phase === "checking") {
+      return t.aiAssistantInitializationChecking;
+    }
+
+    if (update.phase === "creating") {
+      return t.aiAssistantInitializationCreating;
+    }
+
+    if (update.phase === "warming") {
+      return t.aiAssistantInitializationWarming;
+    }
+
+    if (update.phase === "downloading") {
+      if (typeof update.downloadProgress === "number") {
+        return `${t.aiAssistantInitializationDownloading} ${Math.round(
+          update.downloadProgress * 100
+        )}%`;
+      }
+
+      return t.aiAssistantInitializationDownloading;
+    }
+
+    return t.aiAssistantInitialized;
+  };
+
+  const handleAiAssistantEntryClick = async () => {
+    if (isAiAssistantReady) {
+      handleOpenAiAssistantFullscreen();
+      return;
+    }
+
+    if (isAiAssistantInitializing) {
+      return;
+    }
+
+    setAiAssistantInitializationStatus("initializing");
+    setAiAssistantInitializationDetail(t.aiAssistantPopupInitializingHint);
+    setPendingAction("initializeAiAssistant");
+
+    try {
+      await initializeChromeLanguageModel((update) => {
+        setAiAssistantInitializationDetail(getAiAssistantInitializationDetail(update));
+      });
+      await saveAiAssistantInitialized(true);
+      setAiAssistantInitializationStatus("ready");
+      setAiAssistantInitializationDetail(t.aiAssistantReadyToChat);
+      setMessage(t.aiAssistantReadyToChat);
+    } catch (error) {
+      await saveAiAssistantInitialized(false);
+      setAiAssistantInitializationStatus("needed");
+      setAiAssistantInitializationDetail("");
+      setMessage(getAiAssistantErrorMessage(error));
     } finally {
       setPendingAction(null);
     }
@@ -2666,69 +2762,32 @@ function PopupApp() {
             <div className="feature-header">
               <div>
                 <h2>{t.aiAssistant}</h2>
-                <p className="ai-assistant-guide">{t.aiAssistantGuide}</p>
-              </div>
-              <div className="feature-actions">
-                <span className="ai-fullscreen-hint">{t.aiAssistantFullscreenHint}</span>
-                <button
-                  className="text-button"
-                  title={t.aiAssistantFullscreenHint}
-                  type="button"
-                  onClick={() => handleOpenAiAssistantFullscreen()}
-                >
-                  {t.aiAssistantFullscreen}
-                </button>
               </div>
             </div>
 
             <section className="ai-assistant-panel developer-form" aria-label={t.aiAssistant}>
-              <div className="ai-shortcuts-heading">
-                <h3>{t.aiAssistantQuickActions}</h3>
-                <p>{t.aiAssistantQuickIntro}</p>
-              </div>
-              <div className="ai-shortcut-grid">
-                {[
-                  {
-                    title: t.aiAssistantQuickAnswer,
-                    description: t.aiAssistantQuickAnswerDescription,
-                    prompt: t.aiAssistantQuickAnswerPrompt
-                  },
-                  {
-                    title: t.aiAssistantQuickDraft,
-                    description: t.aiAssistantQuickDraftDescription,
-                    prompt: t.aiAssistantQuickDraftPrompt
-                  },
-                  {
-                    title: t.aiAssistantQuickTranslate,
-                    description: t.aiAssistantQuickTranslateDescription,
-                    prompt: t.aiAssistantQuickTranslatePrompt
-                  },
-                  {
-                    title: t.aiAssistantQuickSummarize,
-                    description: t.aiAssistantQuickSummarizeDescription,
-                    prompt: t.aiAssistantQuickSummarizePrompt
-                  },
-                  {
-                    title: t.aiAssistantQuickCreative,
-                    description: t.aiAssistantQuickCreativeDescription,
-                    prompt: t.aiAssistantQuickCreativePrompt
-                  },
-                  {
-                    title: t.aiAssistantQuickChat,
-                    description: t.aiAssistantQuickChatDescription,
-                    prompt: ""
-                  }
-                ].map((shortcut) => (
-                  <button
-                    className="ai-shortcut-card"
-                    key={shortcut.title}
-                    type="button"
-                    onClick={() => handleOpenAiAssistantFullscreen(shortcut.prompt)}
-                  >
-                    <span>{shortcut.title}</span>
-                    <small>{shortcut.description}</small>
-                  </button>
-                ))}
+              <div className="ai-assistant-entry">
+                <div className="ai-assistant-entry-copy">
+                  <p>{t.aiAssistantPopupGuideOffline}</p>
+                  <p>{t.aiAssistantPopupGuideStrengths}</p>
+                  <p>{t.aiAssistantPopupGuideLimits}</p>
+                  <strong>{t.aiAssistantPopupGuideSummary}</strong>
+                </div>
+                <button
+                  className="primary-button"
+                  aria-busy={isAiAssistantInitializing ? "true" : undefined}
+                  disabled={isAiAssistantInitializing}
+                  type="button"
+                  onClick={handleAiAssistantEntryClick}
+                >
+                  {isAiAssistantInitializing ? <span className="button-spinner" /> : null}
+                  {isAiAssistantReady ? t.aiAssistantOpenChat : t.aiAssistantPopupInitialize}
+                </button>
+                {aiAssistantInitializationDetail ? (
+                  <p className="ai-assistant-initialization-detail">
+                    {aiAssistantInitializationDetail}
+                  </p>
+                ) : null}
               </div>
             </section>
           </section>

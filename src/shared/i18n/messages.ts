@@ -25,7 +25,6 @@ type Messages = {
   readonly aiAssistantEmpty: string;
   readonly aiAssistantFailed: string;
   readonly aiAssistantFullscreen: string;
-  readonly aiAssistantFullscreenHint: string;
   readonly aiAssistantGenerating: string;
   readonly aiAssistantGuide: string;
   readonly aiAssistantInitialize: string;
@@ -39,27 +38,16 @@ type Messages = {
   readonly aiAssistantHistory: string;
   readonly aiAssistantNewConversation: string;
   readonly aiAssistantNoHistory: string;
+  readonly aiAssistantOpenChat: string;
+  readonly aiAssistantPopupInitialize: string;
+  readonly aiAssistantPopupInitializingHint: string;
+  readonly aiAssistantPopupGuideLimits: string;
+  readonly aiAssistantPopupGuideOffline: string;
+  readonly aiAssistantPopupGuideStrengths: string;
+  readonly aiAssistantPopupGuideSummary: string;
   readonly aiAssistantPrompt: string;
   readonly aiAssistantPromptPlaceholder: string;
-  readonly aiAssistantQuickActions: string;
-  readonly aiAssistantQuickIntro: string;
-  readonly aiAssistantQuickAnswer: string;
-  readonly aiAssistantQuickAnswerDescription: string;
-  readonly aiAssistantQuickAnswerPrompt: string;
-  readonly aiAssistantQuickDraft: string;
-  readonly aiAssistantQuickDraftDescription: string;
-  readonly aiAssistantQuickDraftPrompt: string;
-  readonly aiAssistantQuickTranslate: string;
-  readonly aiAssistantQuickTranslateDescription: string;
-  readonly aiAssistantQuickTranslatePrompt: string;
-  readonly aiAssistantQuickSummarize: string;
-  readonly aiAssistantQuickSummarizeDescription: string;
-  readonly aiAssistantQuickSummarizePrompt: string;
-  readonly aiAssistantQuickCreative: string;
-  readonly aiAssistantQuickCreativeDescription: string;
-  readonly aiAssistantQuickCreativePrompt: string;
-  readonly aiAssistantQuickChat: string;
-  readonly aiAssistantQuickChatDescription: string;
+  readonly aiAssistantReadyToChat: string;
   readonly aiAssistantThinking: string;
   readonly aiAssistantTimeout: string;
   readonly aiAssistantUnavailable: string;
@@ -262,9 +250,8 @@ export const messages: Record<Locale, Messages> = {
     aiAssistantEmpty: "暂无对话。",
     aiAssistantFailed: "AI 助手响应失败，请稍后重试。",
     aiAssistantFullscreen: "全屏使用",
-    aiAssistantFullscreenHint: "长内容建议使用全屏版本，阅读和输入更舒服。",
     aiAssistantGenerating: "正在生成...",
-    aiAssistantGuide: "更适合帮你处理已提供的文本，比如摘要、改写、翻译和整理格式；如果要问知识类问题，请把背景信息一起发给它。",
+    aiAssistantGuide: "Chrome 内置离线模型，适合摘要、信息提炼、翻译和轻量写作润色；不联网，不适合复杂推理或专业领域判断。",
     aiAssistantInitialize: "初始化本机 AI",
     aiAssistantInitializationChecking: "正在检查本机模型状态...",
     aiAssistantInitializationCreating: "正在创建本机 AI 会话...",
@@ -276,27 +263,16 @@ export const messages: Record<Locale, Messages> = {
     aiAssistantHistory: "历史对话",
     aiAssistantNewConversation: "新对话",
     aiAssistantNoHistory: "暂无历史对话。",
+    aiAssistantOpenChat: "去对话",
+    aiAssistantPopupInitialize: "初始化",
+    aiAssistantPopupInitializingHint: "正在初始化本机 AI，完成后即可进行对话。",
+    aiAssistantPopupGuideLimits: "如果你使用它做复杂推理、专业领域的推理你将获得不好的体验",
+    aiAssistantPopupGuideOffline: "该模型是 Chrome 浏览器内置的离线模型，不具备联网搜索的功能",
+    aiAssistantPopupGuideStrengths: "对于文本摘要和信息提炼、翻译与多语言处理，写作辅助和文润色可以获得还不错的体验",
+    aiAssistantPopupGuideSummary: "这是浏览器里的 \"随身小助手\"，我擅长处理日常、轻量、隐私敏感的文本任务，但别指望可以替代云端大模型做复杂工作",
     aiAssistantPrompt: "输入内容",
     aiAssistantPromptPlaceholder: "向本机 AI 提问",
-    aiAssistantQuickActions: "快捷入口",
-    aiAssistantQuickIntro: "选择一个任务进入全屏模式，再补充要处理的内容。",
-    aiAssistantQuickAnswer: "回答问题",
-    aiAssistantQuickAnswerDescription: "基于你提供的背景回答",
-    aiAssistantQuickAnswerPrompt: "请基于我提供的背景信息回答问题。\n\n背景：\n\n问题：",
-    aiAssistantQuickDraft: "生成文本",
-    aiAssistantQuickDraftDescription: "邮件、文案、代码说明等",
-    aiAssistantQuickDraftPrompt: "请根据以下要求生成文本。\n\n用途：\n风格：\n内容要点：",
-    aiAssistantQuickTranslate: "翻译文本",
-    aiAssistantQuickTranslateDescription: "保留原文结构和语气",
-    aiAssistantQuickTranslatePrompt: "请把下面的文本翻译成中文，并保留原有格式。\n\n",
-    aiAssistantQuickSummarize: "总结文本",
-    aiAssistantQuickSummarizeDescription: "提取重点、结论和行动项",
-    aiAssistantQuickSummarizePrompt: "请总结下面的文本，提取关键结论和行动项。\n\n",
-    aiAssistantQuickCreative: "创意写作",
-    aiAssistantQuickCreativeDescription: "故事、角色、对话和想法",
-    aiAssistantQuickCreativePrompt: "请基于以下设定进行创意写作。\n\n主题：\n风格：\n限制：",
-    aiAssistantQuickChat: "自由对话",
-    aiAssistantQuickChatDescription: "进入全屏后再开始对话",
+    aiAssistantReadyToChat: "初始化完成，可以进行对话了。",
     aiAssistantThinking: "思考中...",
     aiAssistantTimeout: "AI 助手响应超时，请直接重试。",
     aiAssistantUnavailable: "当前 Chrome 暂不支持内置 AI 助手，或模型不可用。",
@@ -498,9 +474,8 @@ export const messages: Record<Locale, Messages> = {
     aiAssistantEmpty: "No conversation yet.",
     aiAssistantFailed: "AI Assistant failed to respond. Try again later.",
     aiAssistantFullscreen: "Open Fullscreen",
-    aiAssistantFullscreenHint: "Use the fullscreen version for longer content. Reading and writing are easier there.",
     aiAssistantGenerating: "Generating...",
-    aiAssistantGuide: "Best for working with text you provide, such as summarizing, rewriting, translating, or formatting. For knowledge questions, include the needed context.",
+    aiAssistantGuide: "Chrome built-in offline model for summaries, extraction, translation, and light writing polish. It does not search the web and is not suited for complex reasoning or professional judgment.",
     aiAssistantInitialize: "Initialize Local AI",
     aiAssistantInitializationChecking: "Checking local model status...",
     aiAssistantInitializationCreating: "Creating local AI session...",
@@ -512,27 +487,16 @@ export const messages: Record<Locale, Messages> = {
     aiAssistantHistory: "History",
     aiAssistantNewConversation: "New Chat",
     aiAssistantNoHistory: "No chat history yet.",
+    aiAssistantOpenChat: "Open Chat",
+    aiAssistantPopupInitialize: "Initialize",
+    aiAssistantPopupInitializingHint: "Initializing local AI. You can start chatting after it finishes.",
+    aiAssistantPopupGuideLimits: "If you use it for complex reasoning or specialized professional reasoning, the experience will be poor.",
+    aiAssistantPopupGuideOffline: "This model is an offline model built into Chrome. It does not support web search.",
+    aiAssistantPopupGuideStrengths: "It works well for text summarization, information extraction, translation, multilingual processing, writing assistance, and text polishing.",
+    aiAssistantPopupGuideSummary: "Think of it as a \"pocket assistant\" in the browser: useful enough for daily, lightweight, privacy-sensitive text tasks, but not a replacement for cloud models on complex work.",
     aiAssistantPrompt: "Message",
     aiAssistantPromptPlaceholder: "Ask the local AI assistant",
-    aiAssistantQuickActions: "Quick Actions",
-    aiAssistantQuickIntro: "Pick a task, then add the content in fullscreen mode.",
-    aiAssistantQuickAnswer: "Answer Questions",
-    aiAssistantQuickAnswerDescription: "Answer from your context",
-    aiAssistantQuickAnswerPrompt: "Answer the question using the context I provide.\n\nContext:\n\nQuestion:",
-    aiAssistantQuickDraft: "Generate Text",
-    aiAssistantQuickDraftDescription: "Email, copy, notes, code docs",
-    aiAssistantQuickDraftPrompt: "Generate text based on these requirements.\n\nPurpose:\nStyle:\nKey points:",
-    aiAssistantQuickTranslate: "Translate Text",
-    aiAssistantQuickTranslateDescription: "Keep structure and tone",
-    aiAssistantQuickTranslatePrompt: "Translate the following text into English and keep the original formatting.\n\n",
-    aiAssistantQuickSummarize: "Summarize Text",
-    aiAssistantQuickSummarizeDescription: "Extract points and actions",
-    aiAssistantQuickSummarizePrompt: "Summarize the following text and extract key conclusions and action items.\n\n",
-    aiAssistantQuickCreative: "Creative Writing",
-    aiAssistantQuickCreativeDescription: "Stories, roles, dialogs, ideas",
-    aiAssistantQuickCreativePrompt: "Write creatively based on this setup.\n\nTopic:\nStyle:\nConstraints:",
-    aiAssistantQuickChat: "Free Chat",
-    aiAssistantQuickChatDescription: "Continue in fullscreen mode",
+    aiAssistantReadyToChat: "Initialization complete. You can start chatting now.",
     aiAssistantThinking: "Thinking...",
     aiAssistantTimeout: "AI Assistant timed out. Try again directly.",
     aiAssistantUnavailable: "Built-in AI Assistant is not supported in this Chrome version, or the model is unavailable.",

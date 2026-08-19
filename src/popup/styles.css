@@ -685,28 +685,11 @@ h3 {
 
 .ai-assistant-panel {
   display: grid;
-  align-content: start;
+  align-content: center;
   gap: 14px;
   min-height: 0;
   overflow-y: auto;
-}
-
-.ai-assistant-guide {
-  max-width: 560px;
-  margin-top: 6px;
-  color: #64778d;
-  font-size: 12px;
-  font-weight: 700;
-  line-height: 1.45;
-}
-
-.ai-fullscreen-hint {
-  max-width: 168px;
-  color: #64778d;
-  font-size: 11px;
-  font-weight: 700;
-  line-height: 1.35;
-  text-align: right;
+  padding: 32px;
 }
 
 .ai-chat-surface {
@@ -750,60 +733,67 @@ h3 {
   line-height: 1.4;
 }
 
-.ai-shortcuts-heading {
+.ai-assistant-entry {
   display: grid;
-  gap: 4px;
+  width: min(100%, 660px);
+  justify-self: center;
+  align-self: center;
+  justify-items: center;
+  gap: 22px;
+  text-align: center;
 }
 
-.ai-shortcuts-heading h3 {
+.ai-assistant-entry-copy {
+  display: grid;
+  gap: 12px;
+  color: #64778d;
+}
+
+.ai-assistant-entry-copy p,
+.ai-assistant-entry-copy strong {
+  color: #64778d;
+  font-size: 15px;
+  font-weight: 700;
+  line-height: 1.65;
+}
+
+.ai-assistant-entry-copy strong {
   color: #202b3a;
-  font-size: 14px;
-  line-height: 1.35;
+  font-weight: 850;
 }
 
-.ai-shortcuts-heading p {
+.ai-assistant-entry .primary-button {
+  display: inline-flex;
+  width: auto;
+  min-width: 148px;
+  height: 40px;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 0 24px;
+}
+
+.button-spinner {
+  width: 14px;
+  height: 14px;
+  flex: 0 0 auto;
+  border: 2px solid rgba(255, 255, 255, 0.38);
+  border-top-color: #ffffff;
+  border-radius: 999px;
+  animation: button-spinner-rotate 0.8s linear infinite;
+}
+
+.ai-assistant-initialization-detail {
   color: #64778d;
   font-size: 12px;
   font-weight: 700;
-  line-height: 1.45;
+  line-height: 1.5;
 }
 
-.ai-shortcut-grid {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 10px;
-}
-
-.ai-shortcut-card {
-  display: grid;
-  min-height: 76px;
-  align-content: start;
-  gap: 6px;
-  border: 1px solid rgba(202, 215, 229, 0.78);
-  border-radius: 8px;
-  background: rgba(249, 252, 255, 0.72);
-  color: #202b3a;
-  padding: 12px;
-  text-align: left;
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.86);
-}
-
-.ai-shortcut-card:hover {
-  border-color: rgba(15, 111, 159, 0.34);
-  background: rgba(231, 244, 251, 0.78);
-}
-
-.ai-shortcut-card span {
-  font-size: 14px;
-  font-weight: 800;
-  line-height: 1.35;
-}
-
-.ai-shortcut-card small {
-  color: #64778d;
-  font-size: 12px;
-  font-weight: 700;
-  line-height: 1.4;
+@keyframes button-spinner-rotate {
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 .ai-chat-message {

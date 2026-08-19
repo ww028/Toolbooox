@@ -558,7 +558,6 @@ function OptionsApp() {
                 onChange={(event) => setAiAssistantInput(event.target.value)}
               />
               <div className="ai-options-composer-footer">
-                <span>{t.aiAssistantFullscreenHint}</span>
                 <button
                   className="primary-action"
                   disabled={
