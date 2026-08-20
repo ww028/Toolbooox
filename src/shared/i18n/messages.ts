@@ -108,6 +108,7 @@ type Messages = {
   readonly copyAll: string;
   readonly copyFailed: string;
   readonly currentSite: string;
+  readonly databaseViewer: string;
   readonly delete: string;
   readonly deleteConfirm: (displayName: string) => string;
   readonly deleted: string;
@@ -366,6 +367,7 @@ export const messages: Record<Locale, Messages> = {
     copyAll: "复制全部",
     copyFailed: "复制失败，请手动复制。",
     currentSite: "当前网站",
+    databaseViewer: "数据库",
     delete: "删除",
     deleteConfirm: (displayName) => `确定删除「${displayName}」的密码吗？`,
     deleted: "密码已从本地删除。",
@@ -623,6 +625,7 @@ export const messages: Record<Locale, Messages> = {
     copyAll: "Copy All",
     copyFailed: "Copy failed. Please copy manually.",
     currentSite: "Current site",
+    databaseViewer: "Database",
     delete: "Delete",
     deleteConfirm: (displayName) => `Delete password for ${displayName}?`,
     deleted: "Password deleted locally.",

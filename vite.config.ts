@@ -9,6 +9,7 @@ export default defineConfig({
     rollupOptions: {
       input: {
         background: "src/background/main.ts",
+        database: "database.html",
         options: "options.html",
         popup: "popup.html",
         sidepanel: "sidepanel.html"

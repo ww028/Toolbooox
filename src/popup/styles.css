@@ -140,6 +140,7 @@ h1 {
 
 .sidebar-menu {
   display: grid;
+  align-content: start;
   flex: 1 1 auto;
   gap: 8px;
   min-height: 0;
@@ -668,11 +669,11 @@ h3 {
 
 .ai-assistant-panel {
   display: grid;
-  align-content: center;
+  align-content: start;
   gap: 14px;
   min-height: 0;
   overflow-y: auto;
-  padding: 32px;
+  padding: 24px 32px 32px;
 }
 
 .ai-chat-surface {
@@ -720,7 +721,7 @@ h3 {
   display: grid;
   width: min(100%, 660px);
   justify-self: center;
-  align-self: center;
+  align-self: start;
   justify-items: center;
   gap: 22px;
   text-align: center;
@@ -729,6 +730,7 @@ h3 {
 .ai-assistant-entry-copy {
   display: grid;
   gap: 12px;
+  width: min(100%, 640px);
   color: #64778d;
 }
 

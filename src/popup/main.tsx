@@ -126,6 +126,7 @@ const PRIMARY_TOOL_KEYS = [
   "textCompare",
   "languageTranslation",
   "aiAssistant",
+  "databaseViewer",
   "calculator",
   "addressNavigator",
   "todoItems"
@@ -199,6 +200,7 @@ function isToolKey(value: unknown): value is ToolKey {
     value === "textCompare" ||
     value === "languageTranslation" ||
     value === "aiAssistant" ||
+    value === "databaseViewer" ||
     value === "calculator" ||
     value === "addressNavigator" ||
     value === "todoItems" ||
@@ -1455,6 +1457,22 @@ function PopupApp() {
   };
 
   const handleToolChange = async (nextTool: ToolKey) => {
+    if (nextTool === "databaseViewer") {
+      const databaseUrl =
+        typeof chrome !== "undefined" && chrome.runtime?.getURL
+          ? chrome.runtime.getURL("database.html")
+          : `${window.location.origin}/database.html`;
+
+      if (typeof chrome !== "undefined" && chrome.tabs?.create) {
+        await chrome.tabs.create({ url: databaseUrl });
+        window.close();
+        return;
+      }
+
+      window.open(databaseUrl, "_blank", "noopener,noreferrer");
+      return;
+    }
+
     setActiveTool(nextTool);
     setMessage("");
     await saveActiveTool(nextTool);
@@ -1552,6 +1570,8 @@ function PopupApp() {
         return t.languageTranslation;
       case "aiAssistant":
         return t.aiAssistant;
+      case "databaseViewer":
+        return t.databaseViewer;
       case "calculator":
         return t.calculator;
       case "addressNavigator":
