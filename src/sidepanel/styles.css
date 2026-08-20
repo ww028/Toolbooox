@@ -1,3 +1,5 @@
+@import "../shared/styles/scrollbars.css";
+
 :root {
   --accent: #0f6f9f;
   --accent-soft: rgba(15, 111, 159, 0.08);
@@ -500,7 +502,7 @@ h2 {
   box-shadow:
     inset 0 1px 0 rgba(255, 255, 255, 0.92),
     var(--shadow-tight);
-  padding: 12px;
+  padding: 12px 0 12px 12px;
   overflow: hidden;
 }
 
@@ -510,6 +512,7 @@ h2 {
   border: 1px solid rgba(202, 215, 229, 0.72);
   border-radius: 8px;
   background: rgba(238, 244, 250, 0.62);
+  margin-right: 12px;
   padding: 10px;
 }
 
@@ -533,16 +536,7 @@ h2 {
   min-height: 0;
   gap: 10px;
   overflow-y: auto;
-  padding-right: 2px;
-}
-
-.ai-sidepanel-chat-list::-webkit-scrollbar {
-  width: 3px;
-}
-
-.ai-sidepanel-chat-list::-webkit-scrollbar-thumb {
-  border-radius: 999px;
-  background: rgba(124, 152, 183, 0.42);
+  padding-right: 12px;
 }
 
 .ai-sidepanel-message {
@@ -565,10 +559,23 @@ h2 {
   justify-self: start;
 }
 
+.ai-sidepanel-meta {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+}
+
 .ai-sidepanel-role {
   color: #52667c;
   font-size: 11px;
   font-weight: 800;
+  line-height: 1.2;
+}
+
+.ai-sidepanel-time {
+  color: #7a8da3;
+  font-size: 10px;
+  font-weight: 700;
   line-height: 1.2;
 }
 

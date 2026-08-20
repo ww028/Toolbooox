@@ -145,6 +145,42 @@ describe("ai assistant knowledge base", () => {
     expect(snippets[0]?.content).toContain("trial order");
   });
 
+  it("expands professional skill queries to match related profile knowledge", () => {
+    const snippets = searchAiAssistantKnowledgeItems(
+      [
+        {
+          id: "item-1",
+          title: "个人信息",
+          content: "我是一名前端开发工程师，从业 10 年。",
+          tags: "个人信息",
+          createdAt: "2026-01-01T00:00:00.000Z",
+          updatedAt: "2026-01-01T00:00:00.000Z"
+        }
+      ],
+      "我会写JavaScript吗？"
+    );
+
+    expect(snippets[0]?.itemId).toBe("item-1");
+  });
+
+  it("expands career timeline questions to match work experience knowledge", () => {
+    const snippets = searchAiAssistantKnowledgeItems(
+      [
+        {
+          id: "item-1",
+          title: "个人信息",
+          content: "我是一名前端开发工程师，从业 10 年。",
+          tags: "个人信息",
+          createdAt: "2026-01-01T00:00:00.000Z",
+          updatedAt: "2026-01-01T00:00:00.000Z"
+        }
+      ],
+      "你推算一下我大概什么时候本科毕业的"
+    );
+
+    expect(snippets[0]?.itemId).toBe("item-1");
+  });
+
   it("does not match adjacent pet facts when the specific entity is absent", () => {
     const snippets = searchAiAssistantKnowledgeItems(
       [
@@ -199,8 +235,13 @@ describe("ai assistant knowledge base", () => {
     expect(prompt).toContain("涉及用户宠物时，统一称为「你的宠物」");
     expect(prompt).toContain("你的宠物薯条是银渐层");
     expect(prompt).toContain("完整列出所有直接相关对象");
-    expect(prompt).toContain("自然地说不知道");
-    expect(prompt).toContain("不要转述相近事实");
+    expect(prompt).toContain("通用常识或职业/身份常识合理推出");
+    expect(prompt).toContain("不是已记录事实");
+    expect(prompt).toContain("相近但不同的事实不能当作确定答案");
+    expect(prompt).toContain("禁止自行补充未记录年龄");
+    expect(prompt).toContain("年龄来自本地知识库或用户明确表达，可以使用");
+    expect(prompt).toContain("不能替代时间公式");
+    expect(prompt).toContain("当前年份 - N");
     expect(prompt).toContain("最终回答禁止出现这些措辞");
     expect(prompt).toContain("像朋友之间正常对话");
     expect(prompt).toContain("试单可翻译为 trial order");
@@ -212,8 +253,14 @@ describe("ai assistant knowledge base", () => {
 
     expect(isAiAssistantKnowledgeSensitiveQuestion("我养狗了吗？")).toBe(true);
     expect(prompt).toContain("没有检索到能直接支持当前问题的片段");
+    expect(prompt).toContain("按三档回答");
+    expect(prompt).toContain("通用常识或职业/身份常识合理推出");
+    expect(prompt).toContain("禁止自行补充未记录年龄");
+    expect(prompt).toContain("年龄来自本地知识库或用户明确表达，可以使用");
+    expect(prompt).toContain("不能硬算");
     expect(prompt).toContain("我不知道呀，我这里没有这方面的信息");
     expect(prompt).toContain("不要把最近对话里的助手旧回答当作事实依据");
+    expect(prompt).toContain("概率性判断");
     expect(prompt).toContain("最终回答禁止出现这些措辞");
   });
 

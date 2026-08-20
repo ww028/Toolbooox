@@ -1,3 +1,5 @@
+@import "../shared/styles/scrollbars.css";
+
 :root {
   --accent: #0f6f9f;
   --accent-strong: #0a4f73;
@@ -347,12 +349,13 @@ h2 {
   box-shadow:
     inset 0 1px 0 rgba(255, 255, 255, 0.92),
     var(--shadow-tight);
-  padding: 12px;
+  padding: 12px 0 12px 12px;
 }
 
 .ai-history-header {
   display: grid;
   gap: 8px;
+  padding-right: 12px;
 }
 
 .ai-history-header h2 {
@@ -364,6 +367,7 @@ h2 {
   align-content: start;
   min-height: 0;
   gap: 8px;
+  padding-right: 12px;
   overflow-y: auto;
 }
 
@@ -421,7 +425,7 @@ h2 {
   box-shadow:
     inset 0 1px 0 rgba(255, 255, 255, 0.92),
     var(--shadow-tight);
-  padding: 16px;
+  padding: 16px 0 16px 16px;
   overflow: hidden;
 }
 
@@ -431,7 +435,7 @@ h2 {
   min-height: 0;
   gap: 12px;
   overflow-y: auto;
-  padding-right: 4px;
+  padding-right: 16px;
 }
 
 .ai-initialization-panel {
@@ -442,7 +446,7 @@ h2 {
   border: 1px solid rgba(202, 215, 229, 0.72);
   border-radius: 8px;
   background: rgba(238, 244, 250, 0.62);
-  margin-bottom: 12px;
+  margin: 0 16px 12px 0;
   padding: 12px;
 }
 
@@ -475,10 +479,23 @@ h2 {
   justify-self: start;
 }
 
+.ai-chat-meta {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+
 .ai-chat-role {
   color: #52667c;
   font-size: 12px;
   font-weight: 800;
+}
+
+.ai-chat-time {
+  color: #7a8da3;
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1.2;
 }
 
 .ai-chat-content {

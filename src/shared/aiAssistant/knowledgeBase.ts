@@ -175,12 +175,9 @@ function mergeKnowledgeItemValues(
   baseItem: AiAssistantKnowledgeItem,
   nextItem: AiAssistantKnowledgeItem
 ): AiAssistantKnowledgeItem {
-  const baseIsNewer = baseItem.updatedAt >= nextItem.updatedAt;
-  const newerItem = baseIsNewer ? baseItem : nextItem;
-
   return {
-    id: newerItem.id,
-    title: newerItem.title,
+    id: baseItem.id,
+    title: baseItem.title,
     content: mergeKnowledgeContent(baseItem.content, nextItem.content),
     tags: mergeKnowledgeTags(baseItem.tags, nextItem.tags),
     createdAt:
@@ -339,6 +336,29 @@ export function tokenizeAiAssistantKnowledgeText(value: string): string[] {
   );
 }
 
+function expandAiAssistantKnowledgeQueryTokens(query: string, tokens: readonly string[]): string[] {
+  const expandedTokens = new Set(tokens);
+  const normalizedQuery = query.toLowerCase();
+
+  if (
+    /javascript|typescript|\bjs\b|\bts\b|前端|网页|web|代码|编程|开发/.test(
+      normalizedQuery
+    )
+  ) {
+    ["前端", "开发", "工程师", "程序员", "web", "javascript", "typescript"].forEach(
+      (token) => expandedTokens.add(token)
+    );
+  }
+
+  if (/毕业|本科|大学|学历|入行|从业|工作.*多久|工作.*几年|几年|多少年/.test(query)) {
+    ["从业", "工作", "年", "前端", "开发", "工程师", "毕业", "本科"].forEach((token) =>
+      expandedTokens.add(token)
+    );
+  }
+
+  return Array.from(expandedTokens);
+}
+
 function scoreKnowledgeChunk(queryTokens: string[], item: AiAssistantKnowledgeItem, chunk: string): number {
   const searchText = `${item.title} ${item.tags} ${chunk}`.toLowerCase();
 
@@ -358,7 +378,10 @@ export function searchAiAssistantKnowledgeItems(
   items: readonly AiAssistantKnowledgeItem[],
   query: string
 ): AiAssistantKnowledgeSnippet[] {
-  const queryTokens = tokenizeAiAssistantKnowledgeText(query);
+  const queryTokens = expandAiAssistantKnowledgeQueryTokens(
+    query,
+    tokenizeAiAssistantKnowledgeText(query)
+  );
 
   if (queryTokens.length === 0) {
     return [];
@@ -411,7 +434,10 @@ export function createAiAssistantKnowledgePrompt(
     "内部证据中的「我」「我的」指用户本人，不是助手；回答时必须用「你」「你的」转述用户事实。",
     "涉及用户宠物时，统一称为「你的宠物」，例如「你的宠物薯条是银渐层」。",
     "如果用户问某类对象的名字、有哪些或分别是什么，并且片段里列出多个对象，必须完整列出所有直接相关对象；不要只挑第一个。",
-    "如果用户问某个具体事实是否成立，必须只根据内部证据中直接支持该事实的信息回答；内部证据只提到相近但不同的事实时，要自然地说不知道，不要转述相近事实。",
+    "如果用户问某个具体事实是否成立，先判断内部证据是否直接支持；没有直接证据但可由通用常识或职业/身份常识合理推出时，可以用「大概率」「通常来说」「按常识判断」给出推断，并说明不是已记录事实；相近但不同的事实不能当作确定答案。",
+    "职业技能可以做有边界的常识推断，例如「前端开发工程师」通常需要 JavaScript；但时间、年龄、毕业年份只能基于用户明确给出的数字和时间关系做算术，禁止自行补充未记录年龄、入学年份、学制、毕业年龄等信息。",
+    "如果年龄来自本地知识库或用户明确表达，可以使用；但年龄只能作为已知事实或旁证，不能替代时间公式，也不能用年龄反推出未记录的入学/毕业年龄。",
+    "如果用户明确说「本科毕业后就工作」且资料里有「从业 N 年」，毕业年份只能按「当前年份 - N」粗略估算，并说明这是估算；例如当前年份 2026、从业 10 年，则约为 2016 年，而不是 2023 年。如果没有明确时间关系，只能说明缺少信息，不能硬算。",
     "最终回答禁止出现这些措辞：根据片段、片段 1、片段1、根据知识库、知识库显示、资料显示、上下文提到、内部证据。",
     "最终回答要像朋友之间正常对话，直接回答，不要解释检索或推理过程。",
     "",
@@ -441,9 +467,12 @@ export function createAiAssistantKnowledgeMissingPrompt(
 ): string {
   return [
     "本地知识库没有检索到能直接支持当前问题的片段。",
-    "如果用户在问自己的个人信息或宠物信息，请用自然口吻回答：我不知道呀，我这里没有这方面的信息。",
+    "如果用户在问自己的个人信息或宠物信息，按三档回答：有直接证据时明确回答；没有直接证据但可由通用常识或职业/身份常识合理推出时，可以用「大概率」「通常来说」「按常识判断」给出推断，并说明不是已记录事实；既没有直接证据也不能可靠推断时，用自然口吻回答：我不知道呀，我这里没有这方面的信息。",
+    "职业技能可以做有边界的常识推断，例如「前端开发工程师」通常需要 JavaScript；但时间、年龄、毕业年份只能基于用户明确给出的数字和时间关系做算术，禁止自行补充未记录年龄、入学年份、学制、毕业年龄等信息。",
+    "如果年龄来自本地知识库或用户明确表达，可以使用；但年龄只能作为已知事实或旁证，不能替代时间公式，也不能用年龄反推出未记录的入学/毕业年龄。",
+    "如果用户明确说「本科毕业后就工作」且资料里有「从业 N 年」，毕业年份只能按「当前年份 - N」粗略估算，并说明这是估算；例如当前年份 2026、从业 10 年，则约为 2016 年，而不是 2023 年。如果没有明确时间关系，只能说明缺少信息，不能硬算。",
     "不要把最近对话里的助手旧回答当作事实依据；只有用户明确说过或本地知识库直接支持的信息才算事实。",
-    "如果用户问某个事实是否成立，直接说不知道或没有这方面信息即可，不要转述相近事实。",
+    "如果用户问某个事实是否成立，不要把相近事实当作确定答案；只能把通用常识推断表述为概率性判断。",
     "最终回答禁止出现这些措辞：根据片段、片段 1、片段1、根据知识库、知识库显示、资料显示、上下文提到、内部证据。",
     "最终回答要像朋友之间正常对话，直接回答，不要解释检索或推理过程。",
     "",

@@ -70,6 +70,10 @@ type Messages = {
   readonly aiAssistantPrompt: string;
   readonly aiAssistantPromptPlaceholder: string;
   readonly aiAssistantReadyToChat: string;
+  readonly aiAssistantReasoningCallingModel: string;
+  readonly aiAssistantReasoningCheckingKnowledge: string;
+  readonly aiAssistantReasoningComposing: string;
+  readonly aiAssistantReasoningReadingPage: string;
   readonly aiAssistantSendShortcutHint: string;
   readonly aiAssistantThinking: string;
   readonly aiAssistantTimeout: string;
@@ -323,6 +327,10 @@ export const messages: Record<Locale, Messages> = {
     aiAssistantPrompt: "输入内容",
     aiAssistantPromptPlaceholder: "向本机 AI 提问",
     aiAssistantReadyToChat: "初始化完成，可以进行对话了。",
+    aiAssistantReasoningCallingModel: "调用本机模型生成回答",
+    aiAssistantReasoningCheckingKnowledge: "检索本地知识库",
+    aiAssistantReasoningComposing: "整理上下文和回答结构",
+    aiAssistantReasoningReadingPage: "读取当前页面内容",
     aiAssistantSendShortcutHint: "Enter 发送，Shift+Enter 换行",
     aiAssistantThinking: "思考中...",
     aiAssistantTimeout: "AI 助手响应超时，请直接重试。",
@@ -575,6 +583,10 @@ export const messages: Record<Locale, Messages> = {
     aiAssistantPrompt: "Message",
     aiAssistantPromptPlaceholder: "Ask the local AI assistant",
     aiAssistantReadyToChat: "Initialization complete. You can start chatting now.",
+    aiAssistantReasoningCallingModel: "Calling the local model",
+    aiAssistantReasoningCheckingKnowledge: "Searching local knowledge",
+    aiAssistantReasoningComposing: "Organizing context and answer shape",
+    aiAssistantReasoningReadingPage: "Reading the current page",
     aiAssistantSendShortcutHint: "Enter to send, Shift+Enter for newline",
     aiAssistantThinking: "Thinking...",
     aiAssistantTimeout: "AI Assistant timed out. Try again directly.",

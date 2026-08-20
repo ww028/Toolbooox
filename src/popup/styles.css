@@ -1,3 +1,5 @@
+@import "../shared/styles/scrollbars.css";
+
 :root {
   --accent: #0f6f9f;
   --accent-strong: #0a4f73;
@@ -145,25 +147,6 @@ h1 {
   overflow-x: hidden;
   overflow-y: auto;
   padding-right: 10px;
-  scrollbar-color: rgba(90, 116, 145, 0.34) transparent;
-  scrollbar-width: thin;
-}
-
-.sidebar-menu::-webkit-scrollbar {
-  width: 3px;
-}
-
-.sidebar-menu::-webkit-scrollbar-track {
-  background: transparent;
-}
-
-.sidebar-menu::-webkit-scrollbar-thumb {
-  border-radius: 999px;
-  background: rgba(90, 116, 145, 0.32);
-}
-
-.sidebar-menu::-webkit-scrollbar-thumb:hover {
-  background: rgba(90, 116, 145, 0.48);
 }
 
 .eyebrow,

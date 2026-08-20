@@ -14,6 +14,7 @@ export type AiAssistantStoredMessage = {
   readonly id: string;
   readonly role: "user" | "assistant";
   readonly content: string;
+  readonly createdAt?: string;
 };
 
 export type AiAssistantConversation = {
@@ -62,6 +63,18 @@ function isStoredMessage(value: unknown): value is AiAssistantStoredMessage {
   );
 }
 
+function normalizeStoredMessage(message: AiAssistantStoredMessage): AiAssistantStoredMessage {
+  const normalizedMessage: AiAssistantStoredMessage = {
+    id: message.id,
+    role: message.role,
+    content: message.content
+  };
+
+  return typeof message.createdAt === "string"
+    ? { ...normalizedMessage, createdAt: message.createdAt }
+    : normalizedMessage;
+}
+
 function normalizeConversation(value: unknown): AiAssistantConversation | null {
   if (!value || typeof value !== "object") {
     return null;
@@ -83,7 +96,7 @@ function normalizeConversation(value: unknown): AiAssistantConversation | null {
     id: conversation.id,
     title: conversation.title,
     summary: typeof conversation.summary === "string" ? conversation.summary : undefined,
-    messages: conversation.messages.filter(isStoredMessage),
+    messages: conversation.messages.filter(isStoredMessage).map(normalizeStoredMessage),
     createdAt: conversation.createdAt,
     updatedAt: conversation.updatedAt
   };

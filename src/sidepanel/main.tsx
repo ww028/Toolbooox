@@ -84,6 +84,16 @@ function createClientId(prefix: string): string {
   return `${prefix}-${Date.now()}-${Math.random().toString(16).slice(2)}`;
 }
 
+function formatAiAssistantMessageTime(
+  value: string | undefined,
+  fallbackValue: string,
+  locale: Locale
+): string {
+  const date = new Date(value ?? fallbackValue);
+
+  return Number.isNaN(date.getTime()) ? "" : date.toLocaleString(locale);
+}
+
 function createConversationTitle(prompt: string): string {
   const normalizedPrompt = prompt.replace(/\s+/g, " ").trim();
 
@@ -461,6 +471,13 @@ function SidePanelApp() {
     setMessage("");
   };
 
+  const createAiAssistantReasoningMessage = (steps: readonly string[]): string =>
+    [
+      t.aiAssistantThinking,
+      "",
+      ...steps.map((step, index) => `${index + 1}. ${step}`)
+    ].join("\n");
+
   const handleAskAiAssistant = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
 
@@ -485,15 +502,18 @@ function SidePanelApp() {
         readonly shouldClearPendingKnowledge?: boolean;
       } = {}
     ) => {
+      const messageCreatedAt = new Date().toISOString();
       const userMessage: AiAssistantStoredMessage = {
         id: createClientId("ai-user"),
         role: "user",
-        content: prompt
+        content: prompt,
+        createdAt: messageCreatedAt
       };
       const assistantMessage: AiAssistantStoredMessage = {
         id: createClientId("ai-assistant"),
         role: "assistant",
-        content: responseContent
+        content: responseContent,
+        createdAt: messageCreatedAt
       };
       const currentConversation = aiAssistantConversations.find(
         (conversation) => conversation.id === activeAiAssistantConversationId
@@ -574,38 +594,25 @@ function SidePanelApp() {
       aiAssistantModelPromptOverride?.input.trim() === prompt
         ? aiAssistantModelPromptOverride.prompt
         : prompt;
-
-    if (!aiAssistantModelPromptOverride && shouldUseActivePageContent(prompt)) {
-      const activePageContent = await getActivePageContent().catch(() => null);
-
-      if (activePageContent) {
-        modelPrompt = createActivePageContextPrompt(prompt, activePageContent);
-      } else {
-        setMessage(t.aiAssistantPageContextUnavailable);
-        return;
-      }
-    }
-    const knowledgeSnippets = await searchAiAssistantKnowledge(prompt).catch(() => []);
-
-    if (knowledgeSnippets.length > 0) {
-      modelPrompt = createAiAssistantKnowledgePrompt(prompt, modelPrompt, knowledgeSnippets);
-    } else if (
-      shouldUseAiAssistantKnowledge(prompt) &&
-      isAiAssistantKnowledgeSensitiveQuestion(prompt)
-    ) {
-      modelPrompt = createAiAssistantKnowledgeMissingPrompt(prompt, modelPrompt);
-    }
-
+    const shouldReadActivePage =
+      !aiAssistantModelPromptOverride && shouldUseActivePageContent(prompt);
+    const messageCreatedAt = new Date().toISOString();
     const userMessage: AiAssistantStoredMessage = {
       id: createClientId("ai-user"),
       role: "user",
-      content: prompt
+      content: prompt,
+      createdAt: messageCreatedAt
     };
     const assistantMessageId = createClientId("ai-assistant");
     const pendingAssistantMessage: AiAssistantStoredMessage = {
       id: assistantMessageId,
       role: "assistant",
-      content: t.aiAssistantGenerating
+      createdAt: messageCreatedAt,
+      content: createAiAssistantReasoningMessage(
+        shouldReadActivePage
+          ? [t.aiAssistantReasoningReadingPage]
+          : [t.aiAssistantReasoningCheckingKnowledge]
+      )
     };
     const currentConversation = aiAssistantConversations.find(
       (conversation) => conversation.id === activeAiAssistantConversationId
@@ -637,6 +644,60 @@ function SidePanelApp() {
     scrollAiChatToBottom();
 
     try {
+      const updateReasoningMessage = (steps: readonly string[]) => {
+        setAiAssistantMessages((currentMessages) =>
+          currentMessages.map((chatMessage) =>
+            chatMessage.id === assistantMessageId
+              ? { ...chatMessage, content: createAiAssistantReasoningMessage(steps) }
+              : chatMessage
+          )
+        );
+        scrollAiChatToBottom();
+      };
+
+      if (shouldReadActivePage) {
+        const activePageContent = await getActivePageContent().catch(() => null);
+
+        if (activePageContent) {
+          modelPrompt = createActivePageContextPrompt(prompt, activePageContent);
+        } else {
+          setAiAssistantMessages(aiAssistantMessages);
+          setAiAssistantConversations((currentConversations) =>
+            currentConversation
+              ? currentConversations.map((conversation) =>
+                  conversation.id === conversationId ? currentConversation : conversation
+                )
+              : currentConversations.filter((conversation) => conversation.id !== conversationId)
+          );
+          setActiveAiAssistantConversationId(currentConversation?.id ?? null);
+          setMessage(t.aiAssistantPageContextUnavailable);
+          return;
+        }
+
+        updateReasoningMessage([
+          t.aiAssistantReasoningReadingPage,
+          t.aiAssistantReasoningCheckingKnowledge
+        ]);
+      }
+
+      const knowledgeSnippets = await searchAiAssistantKnowledge(prompt).catch(() => []);
+
+      if (knowledgeSnippets.length > 0) {
+        modelPrompt = createAiAssistantKnowledgePrompt(prompt, modelPrompt, knowledgeSnippets);
+      } else if (
+        shouldUseAiAssistantKnowledge(prompt) &&
+        isAiAssistantKnowledgeSensitiveQuestion(prompt)
+      ) {
+        modelPrompt = createAiAssistantKnowledgeMissingPrompt(prompt, modelPrompt);
+      }
+
+      updateReasoningMessage([
+        ...(shouldReadActivePage ? [t.aiAssistantReasoningReadingPage] : []),
+        t.aiAssistantReasoningCheckingKnowledge,
+        t.aiAssistantReasoningComposing,
+        t.aiAssistantReasoningCallingModel
+      ]);
+
       let nextAnswer = "";
       await askChromeLanguageModelStreaming(
         modelPrompt,
@@ -671,7 +732,8 @@ function SidePanelApp() {
           {
             id: assistantMessageId,
             role: "assistant",
-            content: nextAnswer
+            content: nextAnswer,
+            createdAt: messageCreatedAt
           }
         ],
         createdAt,
@@ -950,17 +1012,39 @@ function SidePanelApp() {
 
             <div className="ai-sidepanel-chat-list" ref={aiChatListRef} role="log">
               {aiAssistantMessages.length > 0 ? (
-                aiAssistantMessages.map((chatMessage) => (
-                  <article
-                    className={`ai-sidepanel-message ai-sidepanel-message-${chatMessage.role}`}
-                    key={chatMessage.id}
-                  >
-                    <div className="ai-sidepanel-role">
-                      {chatMessage.role === "user" ? t.aiAssistantUser : t.aiAssistant}
-                    </div>
-                    <div className="ai-sidepanel-content">{chatMessage.content}</div>
-                  </article>
-                ))
+                aiAssistantMessages.map((chatMessage) => {
+                  const messageTime = formatAiAssistantMessageTime(
+                    chatMessage.createdAt,
+                    activeAiAssistantConversationId
+                      ? (aiAssistantConversations.find(
+                          (conversation) => conversation.id === activeAiAssistantConversationId
+                        )?.updatedAt ?? new Date().toISOString())
+                      : new Date().toISOString(),
+                    locale
+                  );
+
+                  return (
+                    <article
+                      className={`ai-sidepanel-message ai-sidepanel-message-${chatMessage.role}`}
+                      key={chatMessage.id}
+                    >
+                      <div className="ai-sidepanel-meta">
+                        <span className="ai-sidepanel-role">
+                          {chatMessage.role === "user" ? t.aiAssistantUser : t.aiAssistant}
+                        </span>
+                        {messageTime ? (
+                          <time
+                            className="ai-sidepanel-time"
+                            dateTime={chatMessage.createdAt}
+                          >
+                            {messageTime}
+                          </time>
+                        ) : null}
+                      </div>
+                      <div className="ai-sidepanel-content">{chatMessage.content}</div>
+                    </article>
+                  );
+                })
               ) : (
                 <div className="empty-state">
                   <p>{t.aiAssistantEmpty}</p>

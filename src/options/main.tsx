@@ -27,7 +27,8 @@ import {
   getSavedAiAssistantInitialized,
   saveAiAssistantConversations,
   saveAiAssistantInitialized,
-  type AiAssistantConversation
+  type AiAssistantConversation,
+  type AiAssistantStoredMessage
 } from "../shared/aiAssistant/storage";
 import { getDefaultLocale, getSavedLocale, type Locale } from "../shared/i18n/locale";
 import { messages } from "../shared/i18n/messages";
@@ -48,11 +49,6 @@ import {
 import manifest from "../../public/manifest.json";
 import "./styles.css";
 
-type AiAssistantMessage = {
-  readonly id: string;
-  readonly role: "user" | "assistant";
-  readonly content: string;
-};
 type AiAssistantInitializationStatus = "checking" | "needed" | "initializing" | "ready";
 const AI_ASSISTANT_TITLE_MAX_LENGTH = 24;
 
@@ -62,6 +58,16 @@ function createClientId(prefix: string): string {
   }
 
   return `${prefix}-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+}
+
+function formatAiAssistantMessageTime(
+  value: string | undefined,
+  fallbackValue: string,
+  locale: Locale
+): string {
+  const date = new Date(value ?? fallbackValue);
+
+  return Number.isNaN(date.getTime()) ? "" : date.toLocaleString(locale);
 }
 
 function createConversationTitle(prompt: string): string {
@@ -88,7 +94,7 @@ function OptionsApp() {
   const [expandedDiffBlockKeys, setExpandedDiffBlockKeys] = useState<ReadonlySet<string>>(
     () => new Set()
   );
-  const [aiAssistantMessages, setAiAssistantMessages] = useState<AiAssistantMessage[]>([]);
+  const [aiAssistantMessages, setAiAssistantMessages] = useState<AiAssistantStoredMessage[]>([]);
   const [aiAssistantConversations, setAiAssistantConversations] = useState<
     AiAssistantConversation[]
   >([]);
@@ -325,15 +331,18 @@ function OptionsApp() {
         readonly shouldClearPendingKnowledge?: boolean;
       } = {}
     ) => {
-      const userMessage: AiAssistantMessage = {
+      const messageCreatedAt = new Date().toISOString();
+      const userMessage: AiAssistantStoredMessage = {
         id: createClientId("ai-user"),
         role: "user",
-        content: prompt
+        content: prompt,
+        createdAt: messageCreatedAt
       };
-      const assistantMessage: AiAssistantMessage = {
+      const assistantMessage: AiAssistantStoredMessage = {
         id: createClientId("ai-assistant"),
         role: "assistant",
-        content: responseContent
+        content: responseContent,
+        createdAt: messageCreatedAt
       };
       const currentConversation = aiAssistantConversations.find(
         (conversation) => conversation.id === activeAiAssistantConversationId
@@ -413,27 +422,21 @@ function OptionsApp() {
       aiAssistantModelPromptOverride?.input.trim() === prompt
         ? aiAssistantModelPromptOverride.prompt
         : prompt;
-    const knowledgeSnippets = await searchAiAssistantKnowledge(prompt).catch(() => []);
-
-    if (knowledgeSnippets.length > 0) {
-      modelPrompt = createAiAssistantKnowledgePrompt(prompt, modelPrompt, knowledgeSnippets);
-    } else if (
-      shouldUseAiAssistantKnowledge(prompt) &&
-      isAiAssistantKnowledgeSensitiveQuestion(prompt)
-    ) {
-      modelPrompt = createAiAssistantKnowledgeMissingPrompt(prompt, modelPrompt);
-    }
-
-    const userMessage: AiAssistantMessage = {
+    const messageCreatedAt = new Date().toISOString();
+    const userMessage: AiAssistantStoredMessage = {
       id: createClientId("ai-user"),
       role: "user",
-      content: prompt
+      content: prompt,
+      createdAt: messageCreatedAt
     };
     const assistantMessageId = createClientId("ai-assistant");
-    const pendingAssistantMessage: AiAssistantMessage = {
+    const pendingAssistantMessage: AiAssistantStoredMessage = {
       id: assistantMessageId,
       role: "assistant",
-      content: t.aiAssistantGenerating
+      createdAt: messageCreatedAt,
+      content: createAiAssistantReasoningMessage([
+        t.aiAssistantReasoningCheckingKnowledge
+      ])
     };
     const currentConversation = aiAssistantConversations.find(
       (conversation) => conversation.id === activeAiAssistantConversationId
@@ -464,6 +467,32 @@ function OptionsApp() {
     setPendingAction("askAiAssistant");
 
     try {
+      const updateReasoningMessage = (steps: readonly string[]) => {
+        setAiAssistantMessages((currentMessages) =>
+          currentMessages.map((chatMessage) =>
+            chatMessage.id === assistantMessageId
+              ? { ...chatMessage, content: createAiAssistantReasoningMessage(steps) }
+              : chatMessage
+          )
+        );
+      };
+      const knowledgeSnippets = await searchAiAssistantKnowledge(prompt).catch(() => []);
+
+      if (knowledgeSnippets.length > 0) {
+        modelPrompt = createAiAssistantKnowledgePrompt(prompt, modelPrompt, knowledgeSnippets);
+      } else if (
+        shouldUseAiAssistantKnowledge(prompt) &&
+        isAiAssistantKnowledgeSensitiveQuestion(prompt)
+      ) {
+        modelPrompt = createAiAssistantKnowledgeMissingPrompt(prompt, modelPrompt);
+      }
+
+      updateReasoningMessage([
+        t.aiAssistantReasoningCheckingKnowledge,
+        t.aiAssistantReasoningComposing,
+        t.aiAssistantReasoningCallingModel
+      ]);
+
       let nextAnswer = "";
       await askChromeLanguageModelStreaming(
         modelPrompt,
@@ -497,7 +526,8 @@ function OptionsApp() {
           {
             id: assistantMessageId,
             role: "assistant",
-            content: nextAnswer
+            content: nextAnswer,
+            createdAt: messageCreatedAt
           }
         ],
         createdAt,
@@ -535,6 +565,13 @@ function OptionsApp() {
   const handleClearAiAssistant = () => {
     handleNewAiAssistantConversation();
   };
+
+  const createAiAssistantReasoningMessage = (steps: readonly string[]): string =>
+    [
+      t.aiAssistantThinking,
+      "",
+      ...steps.map((step, index) => `${index + 1}. ${step}`)
+    ].join("\n");
 
   const handleAiAssistantInputKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
     if (event.key !== "Enter" || event.shiftKey) {
@@ -713,17 +750,39 @@ function OptionsApp() {
 
               <div className="ai-options-chat-list" ref={aiChatListRef} role="log">
                 {aiAssistantMessages.length > 0 ? (
-                  aiAssistantMessages.map((chatMessage) => (
-                    <article
-                      className={`ai-chat-message ai-chat-message-${chatMessage.role}`}
-                      key={chatMessage.id}
-                    >
-                      <div className="ai-chat-role">
-                        {chatMessage.role === "user" ? t.aiAssistantUser : t.aiAssistant}
-                      </div>
-                      <div className="ai-chat-content">{chatMessage.content}</div>
-                    </article>
-                  ))
+                  aiAssistantMessages.map((chatMessage) => {
+                    const messageTime = formatAiAssistantMessageTime(
+                      chatMessage.createdAt,
+                      activeAiAssistantConversationId
+                        ? (aiAssistantConversations.find(
+                            (conversation) => conversation.id === activeAiAssistantConversationId
+                          )?.updatedAt ?? new Date().toISOString())
+                        : new Date().toISOString(),
+                      locale
+                    );
+
+                    return (
+                      <article
+                        className={`ai-chat-message ai-chat-message-${chatMessage.role}`}
+                        key={chatMessage.id}
+                      >
+                        <div className="ai-chat-meta">
+                          <span className="ai-chat-role">
+                            {chatMessage.role === "user" ? t.aiAssistantUser : t.aiAssistant}
+                          </span>
+                          {messageTime ? (
+                            <time
+                              className="ai-chat-time"
+                              dateTime={chatMessage.createdAt}
+                            >
+                              {messageTime}
+                            </time>
+                          ) : null}
+                        </div>
+                        <div className="ai-chat-content">{chatMessage.content}</div>
+                      </article>
+                    );
+                  })
                 ) : (
                   <div className="empty-state">
                     <p>{t.aiAssistantEmpty}</p>
