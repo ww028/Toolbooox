@@ -164,8 +164,6 @@ type Messages = {
   readonly menuSettings: string;
   readonly menuSettingsHelp: string;
   readonly matchedAccounts: string;
-  readonly moveDown: string;
-  readonly moveUp: string;
   readonly nextPage: string;
   readonly noActiveSite: string;
   readonly noActiveSiteHelp: string;
@@ -181,6 +179,9 @@ type Messages = {
   readonly originalText: string;
   readonly onlineDomain: string;
   readonly onlineDomainPlaceholder: string;
+  readonly projectAuthor: string;
+  readonly projectInfo: string;
+  readonly projectRepository: string;
   readonly openLongTextCompareConfirm: string;
   readonly openSidePanel: string;
   readonly openSidePanelDemo: string;
@@ -420,10 +421,8 @@ export const messages: Record<Locale, Messages> = {
     menu: "菜单",
     menuOrder: "菜单顺序",
     menuSettings: "菜单设置",
-    menuSettingsHelp: "勾选控制菜单是否显示，使用上下按钮调整左侧菜单顺序。设置入口始终保留。",
+    menuSettingsHelp: "勾选控制菜单是否显示，拖动条目调整左侧菜单顺序。设置入口始终保留。",
     matchedAccounts: "匹配账号",
-    moveDown: "下移",
-    moveUp: "上移",
     nextPage: "下一页",
     noActiveSite: "未检测到当前网站",
     noActiveSiteHelp: "在网站页面打开插件后，会自动匹配已保存账号。",
@@ -439,6 +438,9 @@ export const messages: Record<Locale, Messages> = {
     originalText: "原始文本",
     onlineDomain: "线上域名",
     onlineDomainPlaceholder: "www.example.test",
+    projectAuthor: "作者",
+    projectInfo: "项目信息",
+    projectRepository: "GitHub 仓库",
     openLongTextCompareConfirm: "当前文本超过 10 行，更适合使用长文本对比。是否打开长文本对比？",
     openSidePanel: "打开侧边栏",
     openSidePanelDemo: "打开侧边栏 Demo",
@@ -676,10 +678,8 @@ export const messages: Record<Locale, Messages> = {
     menu: "Menu",
     menuOrder: "Menu order",
     menuSettings: "Menu Settings",
-    menuSettingsHelp: "Use checkboxes to show or hide menu items, and arrow buttons to reorder the left menu. Settings always stays available.",
+    menuSettingsHelp: "Use checkboxes to show or hide menu items, and drag rows to reorder the left menu. Settings always stays available.",
     matchedAccounts: "Matched Accounts",
-    moveDown: "Move down",
-    moveUp: "Move up",
     nextPage: "Next",
     noActiveSite: "No active site detected",
     noActiveSiteHelp: "Open this popup on a website to match saved accounts.",
@@ -695,6 +695,9 @@ export const messages: Record<Locale, Messages> = {
     originalText: "Original Text",
     onlineDomain: "Online domain",
     onlineDomainPlaceholder: "www.example.test",
+    projectAuthor: "Author",
+    projectInfo: "Project Info",
+    projectRepository: "GitHub Repository",
     openLongTextCompareConfirm: "The current text is over 10 lines and is better suited for Long Text Compare. Open it now?",
     openSidePanel: "Open Side Panel",
     openSidePanelDemo: "Open Side Panel Demo",

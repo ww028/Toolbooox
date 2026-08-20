@@ -1,5 +1,5 @@
 import { StrictMode, useEffect, useMemo, useRef, useState } from "react";
-import type { ChangeEvent, FormEvent, KeyboardEvent } from "react";
+import type { ChangeEvent, DragEvent, FormEvent, KeyboardEvent } from "react";
 import { createRoot } from "react-dom/client";
 import {
   clearCapturedCookieHeader,
@@ -474,6 +474,8 @@ function PopupApp() {
   const [locale, setLocale] = useState<Locale>(getDefaultLocale());
   const [activeTool, setActiveTool] = useState<ToolKey>("passwordManager");
   const [menuSettings, setMenuSettings] = useState<MenuSettings>(defaultMenuSettings);
+  const [draggingMenuTool, setDraggingMenuTool] = useState<PrimaryToolKey | null>(null);
+  const [dragOverMenuTool, setDragOverMenuTool] = useState<PrimaryToolKey | null>(null);
   const [entries, setEntries] = useState<PasswordEntry[]>([]);
   const [addressNavigationItems, setAddressNavigationItems] = useState<AddressNavigationItem[]>([]);
   const [todoItems, setTodoItems] = useState<TodoItem[]>([]);
@@ -1579,24 +1581,65 @@ function PopupApp() {
     });
   };
 
-  const handleMoveMenuItem = (toolKey: PrimaryToolKey, direction: -1 | 1) => {
-    const currentIndex = menuSettings.order.indexOf(toolKey);
-    const nextIndex = currentIndex + direction;
+  const reorderMenuItem = (sourceToolKey: PrimaryToolKey, targetToolKey: PrimaryToolKey) => {
+    if (sourceToolKey === targetToolKey) {
+      return;
+    }
 
-    if (currentIndex < 0 || nextIndex < 0 || nextIndex >= menuSettings.order.length) {
+    const sourceIndex = menuSettings.order.indexOf(sourceToolKey);
+    const targetIndex = menuSettings.order.indexOf(targetToolKey);
+
+    if (sourceIndex < 0 || targetIndex < 0) {
       return;
     }
 
     const nextOrder = [...menuSettings.order];
-    [nextOrder[currentIndex], nextOrder[nextIndex]] = [
-      nextOrder[nextIndex],
-      nextOrder[currentIndex]
-    ];
+    const [movedToolKey] = nextOrder.splice(sourceIndex, 1);
+    nextOrder.splice(targetIndex, 0, movedToolKey);
 
     updateMenuSettings({
       ...menuSettings,
       order: nextOrder
     });
+  };
+
+  const handleMenuItemDragStart = (
+    event: DragEvent<HTMLElement>,
+    toolKey: PrimaryToolKey
+  ) => {
+    setDraggingMenuTool(toolKey);
+    event.dataTransfer.effectAllowed = "move";
+    event.dataTransfer.setData("text/plain", toolKey);
+  };
+
+  const handleMenuItemDragOver = (
+    event: DragEvent<HTMLElement>,
+    toolKey: PrimaryToolKey
+  ) => {
+    event.preventDefault();
+    event.dataTransfer.dropEffect = "move";
+    setDragOverMenuTool(toolKey);
+  };
+
+  const handleMenuItemDrop = (
+    event: DragEvent<HTMLElement>,
+    targetToolKey: PrimaryToolKey
+  ) => {
+    event.preventDefault();
+    const sourceToolKey =
+      draggingMenuTool ?? (event.dataTransfer.getData("text/plain") as PrimaryToolKey);
+
+    if (PRIMARY_TOOL_KEYS.includes(sourceToolKey)) {
+      reorderMenuItem(sourceToolKey, targetToolKey);
+    }
+
+    setDraggingMenuTool(null);
+    setDragOverMenuTool(null);
+  };
+
+  const handleMenuItemDragEnd = () => {
+    setDraggingMenuTool(null);
+    setDragOverMenuTool(null);
   };
 
   const togglePasswordVisibility = (id: string) => {
@@ -3051,43 +3094,63 @@ function PopupApp() {
               </div>
               <p className="tool-note">{t.menuSettingsHelp}</p>
               <div className="menu-settings-list" role="list">
-                {menuSettings.order.map((toolKey, index) => {
+                {menuSettings.order.map((toolKey) => {
                   const isHidden = hiddenMenuItems.has(toolKey);
+                  const isDragging = draggingMenuTool === toolKey;
+                  const isDragOver = dragOverMenuTool === toolKey && draggingMenuTool !== toolKey;
 
                   return (
-                    <article className="menu-settings-row" key={toolKey} role="listitem">
+                    <article
+                      className={[
+                        "menu-settings-row",
+                        isDragging ? "menu-settings-row-dragging" : "",
+                        isDragOver ? "menu-settings-row-drag-over" : ""
+                      ].filter(Boolean).join(" ")}
+                      draggable
+                      key={toolKey}
+                      role="listitem"
+                      onDragEnd={handleMenuItemDragEnd}
+                      onDragOver={(event) => handleMenuItemDragOver(event, toolKey)}
+                      onDragStart={(event) => handleMenuItemDragStart(event, toolKey)}
+                      onDrop={(event) => handleMenuItemDrop(event, toolKey)}
+                    >
                       <label className="menu-visibility-toggle">
                         <input
                           checked={!isHidden}
+                          draggable={false}
                           type="checkbox"
                           onChange={() => handleToggleMenuItem(toolKey)}
                         />
                         <span>{getPrimaryToolLabel(toolKey)}</span>
                       </label>
-                      <div className="menu-order-actions" aria-label={t.menuOrder}>
-                        <button
-                          aria-label={t.moveUp}
-                          disabled={index === 0}
-                          title={t.moveUp}
-                          type="button"
-                          onClick={() => handleMoveMenuItem(toolKey, -1)}
-                        >
-                          ↑
-                        </button>
-                        <button
-                          aria-label={t.moveDown}
-                          disabled={index === menuSettings.order.length - 1}
-                          title={t.moveDown}
-                          type="button"
-                          onClick={() => handleMoveMenuItem(toolKey, 1)}
-                        >
-                          ↓
-                        </button>
-                      </div>
                     </article>
                   );
                 })}
               </div>
+            </section>
+
+            <section className="developer-form" aria-label={t.projectInfo}>
+              <div className="section-heading">
+                <h3>{t.projectInfo}</h3>
+              </div>
+              <dl className="project-info-list">
+                <div className="project-info-row">
+                  <dt>{t.projectRepository}</dt>
+                  <dd>
+                    <a
+                      href="https://github.com/ww028/Toolbooox"
+                      rel="noreferrer"
+                      target="_blank"
+                    >
+                      github.com/ww028/Toolbooox
+                    </a>
+                  </dd>
+                </div>
+                <div className="project-info-row">
+                  <dt>{t.projectAuthor}</dt>
+                  <dd>ww028</dd>
+                </div>
+              </dl>
             </section>
           </section>
           ) : (
