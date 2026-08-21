@@ -1,6 +1,6 @@
 {
   "name": "toolbooox",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "A local-first all-purpose toolbox Chrome extension.",
   "type": "module",
   "private": true,

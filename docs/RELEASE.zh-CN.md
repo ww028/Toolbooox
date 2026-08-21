@@ -79,7 +79,7 @@ assets/
 ```bash
 npm run build
 cd dist
-zip -r ../toolbooox-v0.1.0.zip .
+zip -r ../toolbooox-v0.1.1.zip .
 cd ..
 ```
 
@@ -88,7 +88,7 @@ cd ..
 检查 zip 内容：
 
 ```bash
-unzip -l toolbooox-v0.1.0.zip | sed -n '1,40p'
+unzip -l toolbooox-v0.1.1.zip | sed -n '1,40p'
 ```
 
 正确结构示例：
@@ -105,16 +105,16 @@ assets/
 1. 打开 GitHub 仓库：<https://github.com/ww028/Toolbooox>
 2. 进入 `Releases`。
 3. 点击 `Draft a new release`。
-4. 创建 tag，例如 `v0.1.0`。
-5. Release 标题使用 `Toolbooox v0.1.0`。
-6. 上传 `toolbooox-v0.1.0.zip` 到 Release Assets。
+4. 创建 tag，例如 `v0.1.1`。
+5. Release 标题使用 `Toolbooox v0.1.1`。
+6. 上传 `toolbooox-v0.1.1.zip` 到 Release Assets。
 7. 在说明里写清楚：
 
 ```markdown
 ## 安装
 
 - Chrome 应用商店：待发布
-- 手动安装包：下载本 Release 附件 `toolbooox-v0.1.0.zip`
+- 手动安装包：下载本 Release 附件 `toolbooox-v0.1.1.zip`
 - 安装文档：https://github.com/ww028/Toolbooox/blob/main/docs/INSTALL.zh-CN.md
 
 ## 隐私
