@@ -1389,49 +1389,6 @@ h3 {
   white-space: nowrap;
 }
 
-.project-info-list {
-  display: grid;
-  gap: 8px;
-}
-
-.project-info-row {
-  display: grid;
-  grid-template-columns: 96px minmax(0, 1fr);
-  align-items: center;
-  gap: 12px;
-  border: 1px solid rgba(248, 251, 254, 0.82);
-  border-radius: 8px;
-  background: rgba(249, 252, 255, 0.42);
-  padding: 10px 12px;
-}
-
-.project-info-row dt {
-  color: #52667c;
-  font-size: 12px;
-  font-weight: 800;
-}
-
-.project-info-row dd,
-.project-info-row a {
-  min-width: 0;
-  overflow: hidden;
-  color: #202b3a;
-  font-size: 13px;
-  font-weight: 700;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.project-info-row a {
-  color: var(--accent);
-  text-decoration: none;
-}
-
-.project-info-row a:hover {
-  text-decoration: underline;
-  text-underline-offset: 3px;
-}
-
 .password-table {
   border: 1px solid rgba(248, 251, 254, 0.82);
   border-radius: 8px;

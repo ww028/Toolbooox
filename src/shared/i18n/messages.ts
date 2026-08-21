@@ -180,9 +180,6 @@ type Messages = {
   readonly originalText: string;
   readonly onlineDomain: string;
   readonly onlineDomainPlaceholder: string;
-  readonly projectAuthor: string;
-  readonly projectInfo: string;
-  readonly projectRepository: string;
   readonly openLongTextCompareConfirm: string;
   readonly openSidePanel: string;
   readonly openSidePanelDemo: string;
@@ -440,9 +437,6 @@ export const messages: Record<Locale, Messages> = {
     originalText: "原始文本",
     onlineDomain: "线上域名",
     onlineDomainPlaceholder: "www.example.test",
-    projectAuthor: "作者",
-    projectInfo: "项目信息",
-    projectRepository: "GitHub 仓库",
     openLongTextCompareConfirm: "当前文本超过 10 行，更适合使用长文本对比。是否打开长文本对比？",
     openSidePanel: "打开侧边栏",
     openSidePanelDemo: "打开侧边栏 Demo",
@@ -698,9 +692,6 @@ export const messages: Record<Locale, Messages> = {
     originalText: "Original Text",
     onlineDomain: "Online domain",
     onlineDomainPlaceholder: "www.example.test",
-    projectAuthor: "Author",
-    projectInfo: "Project Info",
-    projectRepository: "GitHub Repository",
     openLongTextCompareConfirm: "The current text is over 10 lines and is better suited for Long Text Compare. Open it now?",
     openSidePanel: "Open Side Panel",
     openSidePanelDemo: "Open Side Panel Demo",

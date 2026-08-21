@@ -185,12 +185,23 @@ const emptyAiAssistantKnowledgeDraft: AiAssistantKnowledgeDraft = {
 
 const PASSWORD_PAGE_SIZE = 10;
 const MENU_SETTINGS_STORAGE_KEY = "toolbooox.menuSettings";
+const ADDRESS_NAVIGATION_FORM_STATE_STORAGE_KEY = "toolbooox.addressNavigation.formState";
 const TRANSLATION_LANGUAGE_SETTINGS_STORAGE_KEY = "toolbooox.translationLanguages";
 const LONG_TEXT_COMPARE_LINE_THRESHOLD = 10;
 const DEFAULT_LOCAL_DOMAIN = "localhost:";
 const defaultMenuSettings: MenuSettings = {
   order: [...PRIMARY_TOOL_KEYS],
   hidden: []
+};
+type AddressNavigationFormState = {
+  readonly draft: AddressNavigationDraft;
+  readonly isOpen: boolean;
+  readonly editingId: string | null;
+};
+const emptyAddressNavigationFormState: AddressNavigationFormState = {
+  draft: emptyAddressNavigationDraft,
+  isOpen: false,
+  editingId: null
 };
 function isToolKey(value: unknown): value is ToolKey {
   return (
@@ -322,6 +333,46 @@ async function getSavedMenuSettings(): Promise<MenuSettings> {
 
 async function saveMenuSettings(settings: MenuSettings): Promise<void> {
   await setIndexedDbValue(MENU_SETTINGS_STORAGE_KEY, settings);
+}
+
+function isStringRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === "object";
+}
+
+function normalizeAddressNavigationDraft(value: unknown): AddressNavigationDraft {
+  if (!isStringRecord(value)) {
+    return emptyAddressNavigationDraft;
+  }
+
+  return {
+    title: typeof value.title === "string" ? value.title : "",
+    remark: typeof value.remark === "string" ? value.remark : "",
+    url: typeof value.url === "string" ? value.url : ""
+  };
+}
+
+function normalizeAddressNavigationFormState(value: unknown): AddressNavigationFormState {
+  if (!isStringRecord(value)) {
+    return emptyAddressNavigationFormState;
+  }
+
+  return {
+    draft: normalizeAddressNavigationDraft(value.draft),
+    isOpen: value.isOpen === true,
+    editingId: typeof value.editingId === "string" ? value.editingId : null
+  };
+}
+
+async function getSavedAddressNavigationFormState(): Promise<AddressNavigationFormState> {
+  return normalizeAddressNavigationFormState(
+    await getIndexedDbValue(ADDRESS_NAVIGATION_FORM_STATE_STORAGE_KEY)
+  );
+}
+
+async function saveAddressNavigationFormState(
+  formState: AddressNavigationFormState
+): Promise<void> {
+  await setIndexedDbValue(ADDRESS_NAVIGATION_FORM_STATE_STORAGE_KEY, formState);
 }
 
 function toDraft(formState: FormState): PasswordEntryDraft {
@@ -563,7 +614,26 @@ function PopupApp() {
       setCalculatorResultDescription(savedState.resultDescription);
     });
     void getPasswordEntries().then(setEntries);
-    void getAddressNavigationItems().then(setAddressNavigationItems);
+    void Promise.all([
+      getAddressNavigationItems(),
+      getSavedAddressNavigationFormState()
+    ]).then(([items, savedFormState]) => {
+      const hasEditingItem = savedFormState.editingId
+        ? items.some((item) => item.id === savedFormState.editingId)
+        : true;
+      const hasDraftInput = Boolean(
+        savedFormState.draft.title.trim() ||
+        savedFormState.draft.url.trim() ||
+        savedFormState.draft.remark.trim()
+      );
+
+      setAddressNavigationItems(items);
+      setEditingAddressNavigationId(hasEditingItem ? savedFormState.editingId : null);
+      setIsAddressNavigationFormOpen(
+        hasEditingItem ? savedFormState.isOpen : savedFormState.isOpen && hasDraftInput
+      );
+      setAddressNavigationDraft(savedFormState.draft);
+    });
     void getTodoItems().then(setTodoItems);
     void getDomainSwitcherRules().then((rules) => {
       setDomainSwitcherRules(rules);
@@ -1046,13 +1116,30 @@ function PopupApp() {
     setAiAssistantKnowledgeItems(await getAiAssistantKnowledgeItems());
   };
 
+  const persistAddressNavigationFormState = (
+    draft: AddressNavigationDraft,
+    isOpen = isAddressNavigationFormOpen,
+    editingId = editingAddressNavigationId
+  ) => {
+    void saveAddressNavigationFormState({
+      draft,
+      isOpen,
+      editingId
+    });
+  };
+
   const handleAddressNavigationDraftChange =
     (field: keyof AddressNavigationDraft) =>
     (event: ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
-      setAddressNavigationDraft((currentDraft) => ({
-        ...currentDraft,
-        [field]: event.target.value
-      }));
+      const nextValue = event.target.value;
+      setAddressNavigationDraft((currentDraft) => {
+        const nextDraft = {
+          ...currentDraft,
+          [field]: nextValue
+        };
+        persistAddressNavigationFormState(nextDraft);
+        return nextDraft;
+      });
     };
 
   const scrollFeatureMainToTop = () => {
@@ -1066,6 +1153,7 @@ function PopupApp() {
     setEditingAddressNavigationId(null);
     setIsAddressNavigationFormOpen(false);
     setAddressNavigationDraft(emptyAddressNavigationDraft);
+    persistAddressNavigationFormState(emptyAddressNavigationDraft, false, null);
   };
 
   const handleAddAddressNavigation = () => {
@@ -1073,6 +1161,7 @@ function PopupApp() {
     setEditingAddressNavigationId(null);
     setIsAddressNavigationFormOpen(true);
     setAddressNavigationDraft(emptyAddressNavigationDraft);
+    persistAddressNavigationFormState(emptyAddressNavigationDraft, true, null);
   };
 
   const handleSaveAddressNavigation = async (event: FormEvent<HTMLFormElement>) => {
@@ -1118,13 +1207,16 @@ function PopupApp() {
   };
 
   const handleEditAddressNavigationItem = (item: AddressNavigationItem) => {
-    setEditingAddressNavigationId(item.id);
-    setIsAddressNavigationFormOpen(true);
-    setAddressNavigationDraft({
+    const nextDraft = {
       title: item.title,
       remark: item.remark,
       url: item.url
-    });
+    };
+
+    setEditingAddressNavigationId(item.id);
+    setIsAddressNavigationFormOpen(true);
+    setAddressNavigationDraft(nextDraft);
+    persistAddressNavigationFormState(nextDraft, true, item.id);
   };
 
   const handleDeleteAddressNavigationItem = async (item: AddressNavigationItem) => {
@@ -3149,29 +3241,6 @@ function PopupApp() {
               </div>
             </section>
 
-            <section className="developer-form" aria-label={t.projectInfo}>
-              <div className="section-heading">
-                <h3>{t.projectInfo}</h3>
-              </div>
-              <dl className="project-info-list">
-                <div className="project-info-row">
-                  <dt>{t.projectRepository}</dt>
-                  <dd>
-                    <a
-                      href="https://github.com/ww028/Toolbooox"
-                      rel="noreferrer"
-                      target="_blank"
-                    >
-                      github.com/ww028/Toolbooox
-                    </a>
-                  </dd>
-                </div>
-                <div className="project-info-row">
-                  <dt>{t.projectAuthor}</dt>
-                  <dd>ww028</dd>
-                </div>
-              </dl>
-            </section>
           </section>
           ) : (
           <section className="feature-panel" aria-label={t.cookieViewer}>
