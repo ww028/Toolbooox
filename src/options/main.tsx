@@ -3,6 +3,7 @@ import type { ChangeEvent, FormEvent, KeyboardEvent } from "react";
 import { createRoot } from "react-dom/client";
 import {
   askChromeLanguageModelStreaming,
+  getChromeLanguageModelDownloadProgress,
   initializeChromeLanguageModel,
   isChromeLanguageModelInitialized,
   prewarmChromeLanguageModel,
@@ -120,8 +121,24 @@ function OptionsApp() {
 
   useEffect(() => {
     void getSavedLocale().then(setLocale);
-    void getSavedAiAssistantInitialized().then((isInitialized) => {
-      setAiAssistantInitializationStatus(isInitialized ? "ready" : "needed");
+    void getSavedAiAssistantInitialized().then(async (isInitialized) => {
+      if (isInitialized) {
+        setAiAssistantInitializationStatus("ready");
+        return;
+      }
+
+      const savedDownloadProgress = await getChromeLanguageModelDownloadProgress();
+
+      if (savedDownloadProgress !== null && savedDownloadProgress > 0) {
+        // 恢复上次未完成的下载进度，并自动继续下载（Chrome 会在后台持续下载模型）。
+        setAiAssistantInitializationStatus("initializing");
+        setAiAssistantInitializationDetail(
+          `${t.aiAssistantInitializationDownloading} ${Math.round(savedDownloadProgress * 100)}%`
+        );
+        void runAiAssistantInitialization();
+      } else {
+        setAiAssistantInitializationStatus("needed");
+      }
     });
     void getAiAssistantConversations().then(async (conversations) => {
       setAiAssistantConversations(conversations);
@@ -253,13 +270,7 @@ function OptionsApp() {
     return t.aiAssistantInitialized;
   };
 
-  const handleInitializeAiAssistant = async () => {
-    if (pendingAction === "initializeAiAssistant") {
-      return;
-    }
-
-    setAiAssistantInitializationStatus("initializing");
-    setAiAssistantInitializationDetail(t.aiAssistantInitializationChecking);
+  async function runAiAssistantInitialization(): Promise<void> {
     setPendingAction("initializeAiAssistant");
 
     try {
@@ -277,6 +288,16 @@ function OptionsApp() {
     } finally {
       setPendingAction(null);
     }
+  }
+
+  const handleInitializeAiAssistant = async () => {
+    if (pendingAction === "initializeAiAssistant") {
+      return;
+    }
+
+    setAiAssistantInitializationStatus("initializing");
+    setAiAssistantInitializationDetail(t.aiAssistantInitializationChecking);
+    await runAiAssistantInitialization();
   };
 
   const persistAiAssistantConversation = async (

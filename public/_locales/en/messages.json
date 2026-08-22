@@ -3,7 +3,7 @@
     "message": "Toolbooox"
   },
   "extDescription": {
-    "message": "A local-first all-purpose toolbox Chrome extension."
+    "message": "Local-first toolbox: password manager, domain switcher, cookie viewer, text compare, calculator & AI assistant. Data stays local."
   },
   "aiContextMenuRoot": {
     "message": "Process selection with AI Assistant"

@@ -23,6 +23,7 @@ import {
   type AddressNavigationItem
 } from "../shared/addressNavigation/storage";
 import {
+  getChromeLanguageModelDownloadProgress,
   initializeChromeLanguageModel,
   type LanguageModelInitializationUpdate
 } from "../shared/aiAssistant/chromeLanguageModel";
@@ -595,8 +596,24 @@ function PopupApp() {
       setTranslationSourceLanguage(savedLanguages.sourceLanguage);
       setTranslationTargetLanguage(savedLanguages.targetLanguage);
     });
-    void getSavedAiAssistantInitialized().then((isInitialized) => {
-      setAiAssistantInitializationStatus(isInitialized ? "ready" : "needed");
+    void getSavedAiAssistantInitialized().then(async (isInitialized) => {
+      if (isInitialized) {
+        setAiAssistantInitializationStatus("ready");
+        return;
+      }
+
+      const savedDownloadProgress = await getChromeLanguageModelDownloadProgress();
+
+      if (savedDownloadProgress !== null && savedDownloadProgress > 0) {
+        // 恢复上次未完成的下载进度，并自动继续下载（Chrome 会在后台持续下载模型）。
+        setAiAssistantInitializationStatus("initializing");
+        setAiAssistantInitializationDetail(
+          `${t.aiAssistantInitializationDownloading} ${Math.round(savedDownloadProgress * 100)}%`
+        );
+        void runAiAssistantInitialization();
+      } else {
+        setAiAssistantInitializationStatus("needed");
+      }
     });
     void getAiAssistantKnowledgeItems().then(setAiAssistantKnowledgeItems);
     void getSavedMenuSettings().then(setMenuSettings);
@@ -1010,18 +1027,7 @@ function PopupApp() {
     return t.aiAssistantInitialized;
   };
 
-  const handleAiAssistantEntryClick = async () => {
-    if (isAiAssistantReady) {
-      handleOpenAiAssistantFullscreen();
-      return;
-    }
-
-    if (isAiAssistantInitializing) {
-      return;
-    }
-
-    setAiAssistantInitializationStatus("initializing");
-    setAiAssistantInitializationDetail(t.aiAssistantPopupInitializingHint);
+  async function runAiAssistantInitialization(): Promise<void> {
     setPendingAction("initializeAiAssistant");
 
     try {
@@ -1040,6 +1046,21 @@ function PopupApp() {
     } finally {
       setPendingAction(null);
     }
+  }
+
+  const handleAiAssistantEntryClick = async () => {
+    if (isAiAssistantReady) {
+      handleOpenAiAssistantFullscreen();
+      return;
+    }
+
+    if (isAiAssistantInitializing) {
+      return;
+    }
+
+    setAiAssistantInitializationStatus("initializing");
+    setAiAssistantInitializationDetail(t.aiAssistantPopupInitializingHint);
+    await runAiAssistantInitialization();
   };
 
   const handleAiAssistantKnowledgeDraftChange =

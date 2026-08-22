@@ -1,7 +1,7 @@
 {
   "name": "toolbooox",
   "version": "0.1.1",
-  "description": "A local-first all-purpose toolbox Chrome extension.",
+  "description": "Local-first toolbox: password manager, domain switcher, cookie viewer, text compare, calculator & AI assistant. Data stays local.",
   "type": "module",
   "private": true,
   "scripts": {

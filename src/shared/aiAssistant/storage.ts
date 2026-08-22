@@ -5,6 +5,7 @@ import {
 } from "../storage/indexedDbKeyValue";
 
 const AI_ASSISTANT_INITIALIZED_STORAGE_KEY = "toolbooox.aiAssistant.initialized";
+const AI_ASSISTANT_DOWNLOAD_PROGRESS_STORAGE_KEY = "toolbooox.aiAssistant.downloadProgress";
 const DATABASE_NAME = "toolbooox.aiAssistant";
 const DATABASE_VERSION = 1;
 const CONVERSATION_STORE_NAME = "conversations";
@@ -47,6 +48,46 @@ export async function saveAiAssistantInitialized(isInitialized: boolean): Promis
     await setIndexedDbValue(AI_ASSISTANT_INITIALIZED_STORAGE_KEY, isInitialized);
   } catch {
     // This flag is only a startup hint; failing to persist it should not break AI initialization.
+  }
+}
+
+export async function getSavedAiAssistantDownloadProgress(): Promise<number | null> {
+  if (!hasKeyValueIndexedDb()) {
+    return null;
+  }
+
+  try {
+    const savedProgress = await getIndexedDbValue(AI_ASSISTANT_DOWNLOAD_PROGRESS_STORAGE_KEY);
+
+    return typeof savedProgress === "number" && Number.isFinite(savedProgress)
+      ? savedProgress
+      : null;
+  } catch {
+    return null;
+  }
+}
+
+export async function saveAiAssistantDownloadProgress(progress: number): Promise<void> {
+  if (!hasKeyValueIndexedDb()) {
+    return;
+  }
+
+  try {
+    await setIndexedDbValue(AI_ASSISTANT_DOWNLOAD_PROGRESS_STORAGE_KEY, progress);
+  } catch {
+    // Persisting the progress is best-effort; it must not break the download flow.
+  }
+}
+
+export async function clearAiAssistantDownloadProgress(): Promise<void> {
+  if (!hasKeyValueIndexedDb()) {
+    return;
+  }
+
+  try {
+    await setIndexedDbValue(AI_ASSISTANT_DOWNLOAD_PROGRESS_STORAGE_KEY, null);
+  } catch {
+    // Best-effort cleanup after a successful initialization.
   }
 }
 

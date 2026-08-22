@@ -3,7 +3,7 @@
     "message": "Toolbooox"
   },
   "extDescription": {
-    "message": "一个本地优先的万能工具库 Chrome 浏览器插件。"
+    "message": "本地优先的 Chrome 工具箱：密码管理器、域名替换、Cookie 查看、文本比较、翻译、计算器、待办事项和 AI 助手。所有数据均在本机加密保存，不上传、无云同步。"
   },
   "aiContextMenuRoot": {
     "message": "用 AI 助手处理选中文本"

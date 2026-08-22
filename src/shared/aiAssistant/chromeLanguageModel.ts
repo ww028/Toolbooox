@@ -1,3 +1,9 @@
+import {
+  clearAiAssistantDownloadProgress,
+  getSavedAiAssistantDownloadProgress,
+  saveAiAssistantDownloadProgress
+} from "./storage";
+
 type LanguageModelAvailability =
   | "available"
   | "downloadable"
@@ -114,6 +120,7 @@ const LANGUAGE_MODEL_TEXT_OPTIONS: ChromeLanguageModelTextOptions = {
 let cachedAvailability: true | null = null;
 let cachedSession: ChromeLanguageModelSession | null = null;
 let cachedSessionPromise: Promise<ChromeLanguageModelSession> | null = null;
+let cachedAiAssistantDownloadProgress: number | null = null;
 let sessionRequestId = 0;
 
 function getChromeLanguageModel(): ChromeLanguageModelConstructor | null {
@@ -392,9 +399,22 @@ async function getOrCreateLanguageModelSession(
       monitor(monitorTarget) {
         monitorTarget.addEventListener("downloadprogress", (event) => {
           const progressEvent = event as ProgressEvent;
+          // Chrome 每次 create() 都会从头报告下载进度（即使底层有断点续传），
+          // 因此取「已持久化的历史最大进度」与当前进度的较大值，避免 UI 进度回退。
+          const rawProgress =
+            progressEvent.total > 0
+              ? progressEvent.loaded / progressEvent.total
+              : progressEvent.loaded;
+          const normalizedProgress = Math.min(Math.max(rawProgress, 0), 1);
+          cachedAiAssistantDownloadProgress = Math.max(
+            cachedAiAssistantDownloadProgress ?? 0,
+            normalizedProgress
+          );
+
+          void saveAiAssistantDownloadProgress(cachedAiAssistantDownloadProgress);
           onUpdate?.({
             phase: "downloading",
-            downloadProgress: progressEvent.loaded
+            downloadProgress: cachedAiAssistantDownloadProgress
           });
         });
       }
@@ -444,6 +464,16 @@ export async function initializeChromeLanguageModel(
   await ensureLanguageModelAvailable(languageModel, onUpdate);
   const session = await getOrCreateLanguageModelSession(languageModel, onUpdate);
   await warmupLanguageModelSession(session, onUpdate);
+  cachedAiAssistantDownloadProgress = null;
+  void clearAiAssistantDownloadProgress();
+}
+
+export async function getChromeLanguageModelDownloadProgress(): Promise<number | null> {
+  if (cachedAiAssistantDownloadProgress === null) {
+    cachedAiAssistantDownloadProgress = await getSavedAiAssistantDownloadProgress();
+  }
+
+  return cachedAiAssistantDownloadProgress;
 }
 
 export async function prewarmChromeLanguageModel(): Promise<boolean> {
@@ -581,4 +611,5 @@ export function resetChromeLanguageModelSession(): void {
   cachedAvailability = null;
   cachedSession = null;
   cachedSessionPromise = null;
+  cachedAiAssistantDownloadProgress = null;
 }

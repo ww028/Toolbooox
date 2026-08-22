@@ -1,7 +1,10 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { IDBFactory } from "fake-indexeddb";
 import {
+  clearAiAssistantDownloadProgress,
   getAiAssistantConversations,
+  getSavedAiAssistantDownloadProgress,
+  saveAiAssistantDownloadProgress,
   saveAiAssistantInitialized,
   saveAiAssistantConversations,
   type AiAssistantConversation
@@ -65,6 +68,27 @@ describe("ai assistant storage", () => {
     vi.stubGlobal("indexedDB", undefined);
 
     await expect(saveAiAssistantInitialized(false)).resolves.toBeUndefined();
+  });
+
+  it("persists, reads, and clears the AI assistant download progress", async () => {
+    expect(await getSavedAiAssistantDownloadProgress()).toBeNull();
+
+    await saveAiAssistantDownloadProgress(0.42);
+    expect(await getSavedAiAssistantDownloadProgress()).toBe(0.42);
+
+    await saveAiAssistantDownloadProgress(0.87);
+    expect(await getSavedAiAssistantDownloadProgress()).toBe(0.87);
+
+    await clearAiAssistantDownloadProgress();
+    expect(await getSavedAiAssistantDownloadProgress()).toBeNull();
+  });
+
+  it("ignores download progress persistence when IndexedDB is unavailable", async () => {
+    vi.stubGlobal("indexedDB", undefined);
+
+    expect(await getSavedAiAssistantDownloadProgress()).toBeNull();
+    await expect(saveAiAssistantDownloadProgress(0.5)).resolves.toBeUndefined();
+    await expect(clearAiAssistantDownloadProgress()).resolves.toBeUndefined();
   });
 
 });

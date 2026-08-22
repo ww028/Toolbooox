@@ -3,6 +3,7 @@ import type { ChangeEvent, FormEvent, KeyboardEvent } from "react";
 import { createRoot } from "react-dom/client";
 import {
   askChromeLanguageModelStreaming,
+  getChromeLanguageModelDownloadProgress,
   initializeChromeLanguageModel,
   isChromeLanguageModelInitialized,
   prewarmChromeLanguageModel,
@@ -250,8 +251,24 @@ function SidePanelApp() {
   useEffect(() => {
     void getSavedLocale().then(setLocale);
     void getSavedSidePanelTool().then(setActiveTool);
-    void getSavedAiAssistantInitialized().then((isInitialized) => {
-      setAiAssistantInitializationStatus(isInitialized ? "ready" : "needed");
+    void getSavedAiAssistantInitialized().then(async (isInitialized) => {
+      if (isInitialized) {
+        setAiAssistantInitializationStatus("ready");
+        return;
+      }
+
+      const savedDownloadProgress = await getChromeLanguageModelDownloadProgress();
+
+      if (savedDownloadProgress !== null && savedDownloadProgress > 0) {
+        // 恢复上次未完成的下载进度，并自动继续下载（Chrome 会在后台持续下载模型）。
+        setAiAssistantInitializationStatus("initializing");
+        setAiAssistantInitializationDetail(
+          `${t.aiAssistantInitializationDownloading} ${Math.round(savedDownloadProgress * 100)}%`
+        );
+        void runAiAssistantInitialization();
+      } else {
+        setAiAssistantInitializationStatus("needed");
+      }
     });
     void getAiAssistantConversations().then(async (conversations) => {
       aiAssistantConversationsRef.current = conversations;
@@ -425,13 +442,7 @@ function SidePanelApp() {
     return t.aiAssistantInitialized;
   };
 
-  const handleInitializeAiAssistant = async () => {
-    if (pendingAiAssistantAction === "initializeAiAssistant") {
-      return;
-    }
-
-    setAiAssistantInitializationStatus("initializing");
-    setAiAssistantInitializationDetail(t.aiAssistantInitializationChecking);
+  async function runAiAssistantInitialization(): Promise<void> {
     setPendingAiAssistantAction("initializeAiAssistant");
 
     try {
@@ -449,6 +460,16 @@ function SidePanelApp() {
     } finally {
       setPendingAiAssistantAction(null);
     }
+  }
+
+  const handleInitializeAiAssistant = async () => {
+    if (pendingAiAssistantAction === "initializeAiAssistant") {
+      return;
+    }
+
+    setAiAssistantInitializationStatus("initializing");
+    setAiAssistantInitializationDetail(t.aiAssistantInitializationChecking);
+    await runAiAssistantInitialization();
   };
 
   const persistAiAssistantConversation = async (
